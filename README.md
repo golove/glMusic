@@ -27,6 +27,12 @@
 
 ---
 
+---
+### 效果图
+<img src="glMusic/Assets.xcassets/preview image/Screenshot1.imageset/Screenshot1.png" >
+<img src="glMusic/Assets.xcassets/preview image/Screenshot2.imageset/Screenshot2.png" >
+---
+
 ## ✨ 核心特性
 
 ### 1. 🎨 原生 Apple Music 交互美学

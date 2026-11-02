@@ -34,11 +34,11 @@ struct SongsView: View {
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
                     // Header
-                    VStack{
-                        HStack(alignment: .lastTextBaseline) {
+                    VStack(alignment: .leading) {
+                        VStack(alignment: .leading) {
                             Text("歌曲")
                                 .font(.largeTitle.bold())
-                            Spacer()
+//                            Spacer()
                             if !songs.isEmpty {
                                 Text("\(songs.count) 首歌曲 · \(chartName)")
                                     .font(.subheadline)
@@ -109,6 +109,7 @@ struct SongsView: View {
                             Divider().padding(.horizontal, 24)
                     }
                     }
+                    .background(.ultraThinMaterial)
                
             }
             }

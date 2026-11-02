@@ -16,11 +16,51 @@ struct APISong: Codable, Identifiable, Hashable {
     let al: APIAlbumBrief?
     let dt: Int?                   // duration in ms
 
+    init(id: Int, name: String, ar: [APIArtistBrief]?, al: APIAlbumBrief?, dt: Int?) {
+        self.id = id
+        self.name = name
+        self.ar = ar
+        self.al = al
+        self.dt = dt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, ar, artists, al, album, dt, duration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        ar = try container.decodeIfPresent([APIArtistBrief].self, forKey: .ar)
+            ?? container.decodeIfPresent([APIArtistBrief].self, forKey: .artists)
+        al = try container.decodeIfPresent(APIAlbumBrief.self, forKey: .al)
+            ?? container.decodeIfPresent(APIAlbumBrief.self, forKey: .album)
+        dt = try container.decodeIfPresent(Int.self, forKey: .dt)
+            ?? container.decodeIfPresent(Int.self, forKey: .duration)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(ar, forKey: .ar)
+        try container.encodeIfPresent(al, forKey: .al)
+        try container.encodeIfPresent(dt, forKey: .dt)
+    }
+
     var displayArtist: String {
-        (ar ?? []).compactMap(\.name).joined(separator: " / ")
+        let names = (ar ?? []).compactMap(\.name).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return names.isEmpty ? "未知艺人" : names.joined(separator: " / ")
     }
     var displayAlbum: String { al?.name ?? "" }
-    var coverUrl: String? { al?.picUrl }
+    var coverUrl: String? {
+        guard let raw = al?.picUrl, !raw.isEmpty else { return nil }
+        if raw.hasPrefix("http://") {
+            return raw.replacingOccurrences(of: "http://", with: "https://")
+        }
+        return raw
+    }
     var durationMs: Int { dt ?? 0 }
 
     var durationText: String {
@@ -111,7 +151,13 @@ struct APIPlaylist: Codable, Identifiable, Hashable {
     let userId: Int?
     let description: String?
 
-    var displayCover: String? { coverImgUrl ?? picUrl }
+    var displayCover: String? {
+        guard let url = coverImgUrl ?? picUrl, !url.isEmpty else { return nil }
+        if url.hasPrefix("http://") {
+            return url.replacingOccurrences(of: "http://", with: "https://")
+        }
+        return url
+    }
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: APIPlaylist, rhs: APIPlaylist) -> Bool { lhs.id == rhs.id }
@@ -144,6 +190,21 @@ struct NewSongWrapper: Codable, Identifiable {
     let name: String?
     let song: APISong?
     let picUrl: String?
+
+    var asAPISong: APISong? {
+        guard let s = song else { return nil }
+        if s.coverUrl == nil || s.coverUrl?.isEmpty == true, let pic = picUrl {
+            let safePic = pic.hasPrefix("http://") ? pic.replacingOccurrences(of: "http://", with: "https://") : pic
+            return APISong(
+                id: s.id,
+                name: s.name,
+                ar: s.ar,
+                al: APIAlbumBrief(id: s.al?.id, name: s.al?.name, picUrl: safePic),
+                dt: s.dt
+            )
+        }
+        return s
+    }
 }
 
 // MARK: - Banner

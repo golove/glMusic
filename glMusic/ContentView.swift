@@ -22,19 +22,23 @@ struct ContentView: View {
                     .toolbar(removing: .sidebarToggle)
                     .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
             } detail: {
-                ZStack(alignment: .bottom) {
+                ZStack {
                    
 
+                    
+                    detailView
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea(.container, edges: .top)
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     // 悬浮胶囊播放栏
                     PlayerBar()
                         .padding(.horizontal, 60)
                         .padding(.bottom, 16)
                         .zIndex(99)
-                    detailView
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .ignoresSafeArea(.container, edges: .top)
                 }
             }
+           
             .toolbar(removing: .sidebarToggle)
 
             .toolbarBackground(.hidden, for: .windowToolbar)

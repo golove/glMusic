@@ -187,6 +187,7 @@ struct PlayerBar: View {
             }
             
             .frame( height: 38)
+            .padding(.top,2)
 //            .padding(.horizontal,40)
             
 
@@ -194,7 +195,7 @@ struct PlayerBar: View {
             
 
             ProgressSlider(value: $player.progress, trackHeight: 3)
-                .padding(.top,4)
+                .padding(.top,2)
         }
         .frame(height: 42)
     }

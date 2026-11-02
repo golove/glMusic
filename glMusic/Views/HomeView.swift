@@ -121,7 +121,7 @@ struct HomeView: View {
             let (fetchedBanners, fetchedPL, fetchedNS) = try await (b, p, n)
             banners = fetchedBanners
             playlists = fetchedPL
-            newSongs = fetchedNS.compactMap(\.song)
+            newSongs = fetchedNS.compactMap(\.asAPISong)
         } catch {
             errorMsg = "无法连接到 API 服务\n请确认 127.0.0.1:3000 已启动"
             print("HomeView error: \(error)")
@@ -544,8 +544,14 @@ struct NewSongRow: View {
                 switch phase {
                 case .success(let img):
                     img.resizable().aspectRatio(contentMode: .fill)
+                case .failure:
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.12))
+                        .overlay(Image(systemName: "music.note").font(.system(size: 16)).foregroundStyle(.tertiary))
                 default:
-                    Rectangle().fill(.quaternary)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.08))
+                        .overlay(ProgressView().controlSize(.mini))
                 }
             }
             .frame(width: 44, height: 44)

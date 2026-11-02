@@ -7,12 +7,21 @@
 
 import SwiftUI
 
+
 struct testSwiftUIView: View {
+    @Environment(PlayerManager.self) private var player
     var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+        @Bindable var player = player
+        VStack(spacing: 0){
+            Rectangle()
+                .fill(Color.cyan)
+                .frame(height: 65)
+            ProgressSlider(value: $player.volume,trackHeight: 6)
+        }
     }
 }
 
 #Preview {
     testSwiftUIView()
+        .environment(PlayerManager())
 }

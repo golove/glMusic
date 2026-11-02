@@ -77,7 +77,7 @@ struct AlbumGridCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
-                AsyncImage(url: URL(string: album.picUrl ?? "")) { phase in
+                AsyncImage(url: URL(string: album.coverUrl ?? album.picUrl ?? "")) { phase in
                     switch phase {
                     case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
                     default: Rectangle().fill(.quaternary)

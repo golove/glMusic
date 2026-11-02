@@ -7,6 +7,32 @@
 
 import Foundation
 
+// MARK: - Safe URL & Image Helpers
+
+extension String {
+    /// 确保图片与网络资源使用安全 HTTPS 协议，避免 macOS 沙盒 ATS 拦截
+    var httpsURL: String {
+        guard hasPrefix("http://") else { return self }
+        return "https://" + dropFirst(7)
+    }
+
+    /// 识别网易云通用的占位人影/未上传头像默认图片（如 /0.jpg 或 5639395138885805）
+    var isNetEasePlaceholderImage: Bool {
+        contains("/0.jpg") || contains("5639395138885805")
+    }
+}
+
+enum SafeURLHelper {
+    /// 从多个候选图片链接中择优选用真实图片并转为安全 HTTPS 协议
+    static func chooseImage(from candidates: [String?]) -> String? {
+        let valid = candidates.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        for c in valid where !c.isNetEasePlaceholderImage {
+            return c.httpsURL
+        }
+        return valid.first?.httpsURL
+    }
+}
+
 // MARK: - Song
 
 struct APISong: Codable, Identifiable, Hashable {
@@ -54,13 +80,7 @@ struct APISong: Codable, Identifiable, Hashable {
         return names.isEmpty ? "未知艺人" : names.joined(separator: " / ")
     }
     var displayAlbum: String { al?.name ?? "" }
-    var coverUrl: String? {
-        guard let raw = al?.picUrl, !raw.isEmpty else { return nil }
-        if raw.hasPrefix("http://") {
-            return raw.replacingOccurrences(of: "http://", with: "https://")
-        }
-        return raw
-    }
+    var coverUrl: String? { al?.picUrl?.httpsURL }
     var durationMs: Int { dt ?? 0 }
 
     var durationText: String {
@@ -76,12 +96,21 @@ struct APIArtistBrief: Codable, Identifiable, Hashable {
     let id: Int?
     let name: String?
     let picUrl: String?
+    var img1v1Url: String? = nil
+
+    var avatarUrl: String? {
+        SafeURLHelper.chooseImage(from: [img1v1Url, picUrl])
+    }
 }
 
 struct APIAlbumBrief: Codable, Identifiable, Hashable {
     let id: Int?
     let name: String?
     let picUrl: String?
+
+    var coverUrl: String? {
+        picUrl?.httpsURL
+    }
 }
 
 // MARK: - Search
@@ -152,11 +181,7 @@ struct APIPlaylist: Codable, Identifiable, Hashable {
     let description: String?
 
     var displayCover: String? {
-        guard let url = coverImgUrl ?? picUrl, !url.isEmpty else { return nil }
-        if url.hasPrefix("http://") {
-            return url.replacingOccurrences(of: "http://", with: "https://")
-        }
-        return url
+        (coverImgUrl ?? picUrl)?.httpsURL
     }
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -238,6 +263,16 @@ struct APIArtistDetail: Codable, Identifiable, Hashable {
     let img1v1Url: String?
     let albumSize: Int?
     let musicSize: Int?
+    var cover: String? = nil
+    var avatar: String? = nil
+
+    var avatarUrl: String? {
+        SafeURLHelper.chooseImage(from: [img1v1Url, picUrl, avatar, cover])
+    }
+
+    var coverUrl: String? {
+        SafeURLHelper.chooseImage(from: [picUrl, cover, img1v1Url, avatar])
+    }
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: APIArtistDetail, rhs: APIArtistDetail) -> Bool { lhs.id == rhs.id }
@@ -255,20 +290,32 @@ struct APIAlbumDetail: Codable, Identifiable, Hashable {
     let publishTime: Int?
     let company: String?
 
+    var coverUrl: String? {
+        picUrl?.httpsURL
+    }
+
+    private static let yearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy"
+        return f
+    }()
+
+    private static let publishDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy年M月d日"
+        return f
+    }()
+
     var publishYear: String {
         guard let time = publishTime, time > 0 else { return "" }
         let date = Date(timeIntervalSince1970: TimeInterval(time) / 1000.0)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy"
-        return formatter.string(from: date)
+        return Self.yearFormatter.string(from: date)
     }
 
     var publishDateText: String {
         guard let time = publishTime, time > 0 else { return "" }
         let date = Date(timeIntervalSince1970: TimeInterval(time) / 1000.0)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月d日"
-        return formatter.string(from: date)
+        return Self.publishDateFormatter.string(from: date)
     }
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -420,6 +467,10 @@ struct APIDJRadio: Codable, Identifiable, Hashable {
         return "\(count) 订阅"
     }
 
+    var displayCover: String? {
+        picUrl?.httpsURL
+    }
+
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: APIDJRadio, rhs: APIDJRadio) -> Bool { lhs.id == rhs.id }
 }
@@ -429,6 +480,10 @@ struct APIDJHost: Codable, Identifiable, Hashable {
     let nickname: String?
     let avatarUrl: String?
     var id: Int { userId ?? 0 }
+
+    var displayAvatar: String? {
+        avatarUrl?.httpsURL
+    }
 }
 
 struct APIDJBanner: Codable, Identifiable, Hashable {
@@ -506,6 +561,10 @@ struct APIDJRadioBrief: Codable, Identifiable, Hashable {
     let id: Int?
     let name: String?
     let picUrl: String?
+
+    var displayCover: String? {
+        picUrl?.httpsURL
+    }
 }
 
 struct DJBannerResponse: Codable {

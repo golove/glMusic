@@ -7,10 +7,53 @@
 
 import Foundation
 
-final class NetworkManager {
+// MARK: - API Cache Layer
+
+actor APICache {
+    static let shared = APICache()
+
+    private struct CacheEntry {
+        let data: Any
+        let expiration: Date
+    }
+
+    private var storage: [String: CacheEntry] = [:]
+
+    func get<T>(_ key: String) -> T? {
+        guard let entry = storage[key] else { return nil }
+        if Date() < entry.expiration {
+            return entry.data as? T
+        } else {
+            storage.removeValue(forKey: key)
+            return nil
+        }
+    }
+
+    func set<T>(_ key: String, value: T, ttl: TimeInterval) {
+        storage[key] = CacheEntry(data: value, expiration: Date().addingTimeInterval(ttl))
+    }
+
+    func remove(_ key: String) {
+        storage.removeValue(forKey: key)
+    }
+
+    func clearAll() {
+        storage.removeAll()
+    }
+}
+
+// MARK: - Network Manager
+
+final class NetworkManager: @unchecked Sendable {
     static let shared = NetworkManager()
 
     private let baseURL = "http://127.0.0.1:3000"
+
+    // MARK: - Cache Invalidation
+
+    func clearCache() async {
+        await APICache.shared.clearAll()
+    }
 
     // MARK: - Cookie 管理
 
@@ -21,16 +64,38 @@ final class NetworkManager {
 
     var isLoggedIn: Bool { cookie != nil && !cookie!.isEmpty }
 
-    func logout() { cookie = nil }
+    func logout() {
+        cookie = nil
+        Task { await clearCache() }
+    }
 
-    // MARK: - 通用请求（自动带 Cookie + randomCNIP）
+    // MARK: - 通用请求（带重试 + 自动 Cookie + randomCNIP + 优雅错误处理）
 
-    private func request<T: Codable>(_ path: String, params: [String: String] = [:]) async throws -> T {
-        var components = URLComponents(string: baseURL + path)!
+    private func request<T: Codable>(_ path: String, params: [String: String] = [:], maxRetries: Int = 1) async throws -> T {
+        var lastError: Error = APIError.serverError(statusCode: 500)
+        for attempt in 0...maxRetries {
+            do {
+                return try await executeRequest(path, params: params)
+            } catch let err as URLError where err.code == .cancelled {
+                throw err
+            } catch {
+                lastError = error
+                if attempt < maxRetries {
+                    try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+                    continue
+                }
+            }
+        }
+        throw lastError
+    }
+
+    private func executeRequest<T: Codable>(_ path: String, params: [String: String] = [:]) async throws -> T {
+        guard var components = URLComponents(string: baseURL + path) else {
+            throw APIError.invalidURL
+        }
         var items = params.map { URLQueryItem(name: $0.key, value: $0.value) }
         items.append(URLQueryItem(name: "timestamp", value: "\(Int(Date().timeIntervalSince1970 * 1000))"))
         items.append(URLQueryItem(name: "randomCNIP", value: "true"))
-        // 通过 query 参数传递 cookie（NeteaseCloudMusicApi 标准方式）
         if let cookie = cookie {
             items.append(URLQueryItem(name: "cookie", value: cookie))
         }
@@ -39,17 +104,36 @@ final class NetworkManager {
         guard let url = components.url else { throw APIError.invalidURL }
 
         var req = URLRequest(url: url)
+        req.timeoutInterval = 15
         if let cookie = cookie {
             req.setValue(cookie, forHTTPHeaderField: "Cookie")
         }
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw APIError.serverError
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch let urlErr as URLError {
+            if urlErr.code == .notConnectedToInternet || urlErr.code == .networkConnectionLost {
+                throw APIError.networkUnreachable
+            } else if urlErr.code == .timedOut {
+                throw APIError.timeout
+            }
+            throw urlErr
         }
 
-        return try JSONDecoder().decode(T.self, from: data)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.serverError(statusCode: -1)
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw APIError.serverError(statusCode: http.statusCode)
+        }
+
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw APIError.decodingFailed(underlying: error)
+        }
     }
 
     // MARK: - 游客登录（获取基础 Cookie）
@@ -112,9 +196,15 @@ final class NetworkManager {
         return r.result?.songs ?? []
     }
 
-    func hotSearch() async throws -> [HotSearchItem] {
+    func hotSearch(forceRefresh: Bool = false) async throws -> [HotSearchItem] {
+        let cacheKey = "hot_search"
+        if !forceRefresh, let cached: [HotSearchItem] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: HotSearchResponse = try await request("/search/hot/detail")
-        return r.data ?? []
+        let res = r.data ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
     }
 
     // MARK: - Song URL（带 unblock 解锁灰色歌曲）
@@ -147,6 +237,7 @@ final class NetworkManager {
     }
 
     func songDetail(ids: [Int]) async throws -> [APISong] {
+        guard !ids.isEmpty else { return [] }
         let r: SongDetailResponse = try await request("/song/detail", params: [
             "ids": ids.map(String.init).joined(separator: ",")
         ])
@@ -156,63 +247,124 @@ final class NetworkManager {
     // MARK: - Lyrics
 
     func lyrics(id: Int) async throws -> LyricResponse {
-        try await request("/lyric", params: ["id": "\(id)"])
+        let cacheKey = "lyrics_\(id)"
+        if let cached: LyricResponse = await APICache.shared.get(cacheKey) {
+            return cached
+        }
+        let res: LyricResponse = try await request("/lyric", params: ["id": "\(id)"])
+        await APICache.shared.set(cacheKey, value: res, ttl: 1800) // 歌词缓存30分钟
+        return res
     }
 
-    // MARK: - Recommendations
+    // MARK: - Recommendations (带内存缓存)
 
-    func personalizedPlaylists(limit: Int = 10) async throws -> [APIPlaylist] {
+    func personalizedPlaylists(limit: Int = 10, forceRefresh: Bool = false) async throws -> [APIPlaylist] {
+        let cacheKey = "personalized_playlists_\(limit)"
+        if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: PersonalizedResponse = try await request("/personalized", params: ["limit": "\(limit)"])
-        return r.result ?? []
+        let res = r.result ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300) // 缓存5分钟
+        return res
     }
 
-    func personalizedNewSongs() async throws -> [NewSongWrapper] {
+    func personalizedNewSongs(forceRefresh: Bool = false) async throws -> [NewSongWrapper] {
+        let cacheKey = "personalized_newsongs"
+        if !forceRefresh, let cached: [NewSongWrapper] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: PersonalizedNewSongResponse = try await request("/personalized/newsong")
-        return r.result ?? []
+        let res = r.result ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300) // 缓存5分钟
+        return res
     }
 
-    // MARK: - Banner
+    // MARK: - Banner (带内存缓存)
 
-    func banner() async throws -> [APIBanner] {
+    func banner(forceRefresh: Bool = false) async throws -> [APIBanner] {
+        let cacheKey = "banners"
+        if !forceRefresh, let cached: [APIBanner] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: BannerResponse = try await request("/banner", params: ["type": "0"])
-        return r.banners ?? []
+        let res = r.banners ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300) // 缓存5分钟
+        return res
     }
 
-    // MARK: - Playlist
+    // MARK: - Playlist (带内存缓存)
 
-    func playlistDetail(id: Int) async throws -> APIPlaylist? {
+    func playlistDetail(id: Int, forceRefresh: Bool = false) async throws -> APIPlaylist? {
+        let cacheKey = "playlist_detail_\(id)"
+        if !forceRefresh, let cached: APIPlaylist = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: PlaylistDetailFullResponse = try await request("/playlist/detail", params: ["id": "\(id)"])
+        if let pl = r.playlist {
+            await APICache.shared.set(cacheKey, value: pl, ttl: 300)
+        }
         return r.playlist
     }
 
-    func playlistTracks(id: Int, limit: Int = 50, offset: Int = 0) async throws -> [APISong] {
+    func playlistTracks(id: Int, limit: Int = 50, offset: Int = 0, forceRefresh: Bool = false) async throws -> [APISong] {
+        let cacheKey = "playlist_tracks_\(id)_\(limit)_\(offset)"
+        if !forceRefresh, let cached: [APISong] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: PlaylistTracksResponse = try await request("/playlist/track/all", params: [
             "id": "\(id)", "limit": "\(limit)", "offset": "\(offset)"
         ])
-        return r.songs ?? []
+        let res = r.songs ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
     }
 
-    // MARK: - Artists
+    // MARK: - Artists (带内存缓存)
 
-    func topArtists(limit: Int = 30) async throws -> [APIArtistDetail] {
+    func topArtists(limit: Int = 30, forceRefresh: Bool = false) async throws -> [APIArtistDetail] {
+        let cacheKey = "top_artists_\(limit)"
+        if !forceRefresh, let cached: [APIArtistDetail] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: TopArtistsResponse = try await request("/top/artists", params: ["limit": "\(limit)"])
-        return r.artists ?? []
+        let res = r.artists ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 600) // 缓存10分钟
+        return res
     }
 
-    func artistDetail(id: Int) async throws -> ArtistDetailResponse {
-        try await request("/artists", params: ["id": "\(id)"])
+    func artistDetail(id: Int, forceRefresh: Bool = false) async throws -> ArtistDetailResponse {
+        let cacheKey = "artist_detail_\(id)"
+        if !forceRefresh, let cached: ArtistDetailResponse = await APICache.shared.get(cacheKey) {
+            return cached
+        }
+        let res: ArtistDetailResponse = try await request("/artists", params: ["id": "\(id)"])
+        await APICache.shared.set(cacheKey, value: res, ttl: 600)
+        return res
     }
 
-    func artistAlbums(id: Int, limit: Int = 30) async throws -> [APIAlbumDetail] {
+    func artistAlbums(id: Int, limit: Int = 30, forceRefresh: Bool = false) async throws -> [APIAlbumDetail] {
+        let cacheKey = "artist_albums_\(id)_\(limit)"
+        if !forceRefresh, let cached: [APIAlbumDetail] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: ArtistAlbumResponse = try await request("/artist/album", params: ["id": "\(id)", "limit": "\(limit)"])
-        return r.hotAlbums ?? []
+        let res = r.hotAlbums ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 600)
+        return res
     }
 
     // MARK: - Daily Recommend Songs
 
-    func dailyRecommendSongs() async throws -> [APISong] {
+    func dailyRecommendSongs(forceRefresh: Bool = false) async throws -> [APISong] {
+        let cacheKey = "daily_recommend_songs"
+        if !forceRefresh, let cached: [APISong] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DailySongsResponse = try await request("/recommend/songs")
-        return r.data?.dailySongs ?? []
+        let res = r.data?.dailySongs ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 600)
+        return res
     }
 
     // MARK: - Like Song
@@ -229,72 +381,139 @@ final class NetworkManager {
         return r.ids ?? []
     }
 
-    // MARK: - Albums
+    // MARK: - Albums (带内存缓存)
 
-    func newAlbums(limit: Int = 30) async throws -> [APIAlbumDetail] {
+    func newAlbums(limit: Int = 30, forceRefresh: Bool = false) async throws -> [APIAlbumDetail] {
+        let cacheKey = "new_albums_\(limit)"
+        if !forceRefresh, let cached: [APIAlbumDetail] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: NewAlbumsResponse = try await request("/album/new", params: [
             "area": "ZH", "limit": "\(limit)"
         ])
-        return r.albums ?? []
+        let res = r.albums ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 600)
+        return res
     }
 
-    func albumDetail(id: Int) async throws -> AlbumDetailResponse {
-        try await request("/album", params: ["id": "\(id)"])
+    func albumDetail(id: Int, forceRefresh: Bool = false) async throws -> AlbumDetailResponse {
+        let cacheKey = "album_detail_\(id)"
+        if !forceRefresh, let cached: AlbumDetailResponse = await APICache.shared.get(cacheKey) {
+            return cached
+        }
+        let res: AlbumDetailResponse = try await request("/album", params: ["id": "\(id)"])
+        await APICache.shared.set(cacheKey, value: res, ttl: 600)
+        return res
     }
 
-    // MARK: - Toplist
+    // MARK: - Toplist (带内存缓存)
 
-    func toplist() async throws -> [APIPlaylist] {
+    func toplist(forceRefresh: Bool = false) async throws -> [APIPlaylist] {
+        let cacheKey = "toplist"
+        if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: ToplistResponse = try await request("/toplist")
-        return r.list ?? []
+        let res = r.list ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 600)
+        return res
     }
 
     // MARK: - User Playlists
 
-    func userPlaylists(uid: Int, limit: Int = 50) async throws -> [APIPlaylist] {
+    func userPlaylists(uid: Int, limit: Int = 50, forceRefresh: Bool = false) async throws -> [APIPlaylist] {
+        let cacheKey = "user_playlists_\(uid)_\(limit)"
+        if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: UserPlaylistResponse = try await request("/user/playlist", params: [
             "uid": "\(uid)", "limit": "\(limit)"
         ])
-        return r.playlist ?? []
+        let res = r.playlist ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 180)
+        return res
     }
 
-    // MARK: - DJ Radio (广播 / 电台 / 播客)
+    // MARK: - DJ Radio (广播 / 电台 / 播客，带内存缓存)
 
-    func djBanners() async throws -> [APIDJBanner] {
+    func djBanners(forceRefresh: Bool = false) async throws -> [APIDJBanner] {
+        let cacheKey = "dj_banners"
+        if !forceRefresh, let cached: [APIDJBanner] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DJBannerResponse = try await request("/dj/banner")
-        return r.data ?? []
+        let res = r.data ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
     }
 
-    func djRecommend() async throws -> [APIDJRadio] {
+    func djRecommend(forceRefresh: Bool = false) async throws -> [APIDJRadio] {
+        let cacheKey = "dj_recommend"
+        if !forceRefresh, let cached: [APIDJRadio] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DJRecommendResponse = try await request("/dj/recommend")
-        return r.djRadios ?? []
+        let res = r.djRadios ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
     }
 
-    func djProgramToplist(limit: Int = 10) async throws -> [APIDJToplistItem] {
+    func djProgramToplist(limit: Int = 10, forceRefresh: Bool = false) async throws -> [APIDJToplistItem] {
+        let cacheKey = "dj_program_toplist_\(limit)"
+        if !forceRefresh, let cached: [APIDJToplistItem] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DJProgramToplistResponse = try await request("/dj/program/toplist", params: ["limit": "\(limit)"])
-        return r.toplist ?? []
+        let res = r.toplist ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
     }
 
-    func djCategories() async throws -> [APIDJCategory] {
+    func djCategories(forceRefresh: Bool = false) async throws -> [APIDJCategory] {
+        let cacheKey = "dj_categories"
+        if !forceRefresh, let cached: [APIDJCategory] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DJCategoryResponse = try await request("/dj/catelist")
-        return r.categories ?? []
+        let res = r.categories ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 1800)
+        return res
     }
 
-    func djRadiosByCategory(typeId: Int) async throws -> [APIDJRadio] {
+    func djRadiosByCategory(typeId: Int, forceRefresh: Bool = false) async throws -> [APIDJRadio] {
+        let cacheKey = "dj_radios_category_\(typeId)"
+        if !forceRefresh, let cached: [APIDJRadio] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DJRecommendResponse = try await request("/dj/recommend/type", params: ["type": "\(typeId)"])
-        return r.djRadios ?? []
+        let res = r.djRadios ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
     }
 
-    func djRadioDetail(rid: Int) async throws -> APIDJRadio? {
+    func djRadioDetail(rid: Int, forceRefresh: Bool = false) async throws -> APIDJRadio? {
+        let cacheKey = "dj_radio_detail_\(rid)"
+        if !forceRefresh, let cached: APIDJRadio = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DJDetailResponse = try await request("/dj/detail", params: ["rid": "\(rid)"])
+        if let d = r.data {
+            await APICache.shared.set(cacheKey, value: d, ttl: 300)
+        }
         return r.data
     }
 
-    func djRadioPrograms(rid: Int, limit: Int = 50, offset: Int = 0) async throws -> [APIDJProgram] {
+    func djRadioPrograms(rid: Int, limit: Int = 50, offset: Int = 0, forceRefresh: Bool = false) async throws -> [APIDJProgram] {
+        let cacheKey = "dj_programs_\(rid)_\(limit)_\(offset)"
+        if !forceRefresh, let cached: [APIDJProgram] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
         let r: DJProgramResponse = try await request("/dj/program", params: [
             "rid": "\(rid)", "limit": "\(limit)", "offset": "\(offset)"
         ])
-        return r.programs ?? []
+        let res = r.programs ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
     }
 
     func djProgramDetail(id: Int) async throws -> APIDJProgram? {
@@ -305,12 +524,27 @@ final class NetworkManager {
     // MARK: - Error
 
     enum APIError: Error, LocalizedError {
-        case invalidURL, serverError, noData
+        case invalidURL
+        case serverError(statusCode: Int)
+        case networkUnreachable
+        case timeout
+        case decodingFailed(underlying: Error)
+        case noData
+
         var errorDescription: String? {
             switch self {
-            case .invalidURL:   return "无效的 URL"
-            case .serverError:  return "服务器错误"
-            case .noData:       return "无数据"
+            case .invalidURL:
+                return "无效的网络地址"
+            case .serverError(let code):
+                return "服务器响应异常 (状态码: \(code))"
+            case .networkUnreachable:
+                return "网络连接失败，请确认本地网易云 API 服务 (127.0.0.1:3000) 已启动"
+            case .timeout:
+                return "网络请求超时，请检查服务响应"
+            case .decodingFailed:
+                return "数据解析异常"
+            case .noData:
+                return "未获取到有效数据"
             }
         }
     }

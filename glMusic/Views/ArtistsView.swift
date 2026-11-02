@@ -73,11 +73,16 @@ struct APIArtistRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            AsyncImage(url: URL(string: artist.img1v1Url ?? artist.picUrl ?? "")) { phase in
+            AsyncImage(url: URL(string: artist.avatarUrl ?? "")) { phase in
                 switch phase {
-                case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
-                default: Circle().fill(.quaternary)
-                    .overlay(Text(String(artist.name.prefix(1))).font(.headline).foregroundStyle(.secondary))
+                case .success(let img):
+                    img.resizable().aspectRatio(contentMode: .fill)
+                case .failure:
+                    Circle().fill(.quaternary)
+                        .overlay(Text(String(artist.name.prefix(1))).font(.headline).foregroundStyle(.secondary))
+                default:
+                    Circle().fill(.quaternary)
+                        .overlay(ProgressView().controlSize(.mini))
                 }
             }
             .frame(width: 48, height: 48)

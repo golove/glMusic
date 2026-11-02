@@ -93,7 +93,7 @@ struct SearchView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(results.enumerated()), id: \.element.id) { idx, song in
-                            SearchResultRow(song: song, index: idx + 1)
+                            UnifiedSongRow(song: song, index: idx + 1, allSongs: results)
                         }
                     }
                     .padding(.bottom, 80)
@@ -165,123 +165,6 @@ struct FlowLayout: Layout {
         }
 
         return (CGSize(width: width, height: y + rowHeight), frames)
-    }
-}
-
-// MARK: - Search Result Row
-
-struct SearchResultRow: View {
-    let song: APISong
-    let index: Int
-    @Environment(PlayerManager.self) private var player
-    @State private var isHovered = false
-
-    var body: some View {
-        let isCurrent = player.currentSong?.id == song.id
-
-        HStack(spacing: 12) {
-            Text("\(index)")
-                .font(.system(size: 12).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 28, alignment: .trailing)
-
-            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                switch phase {
-                case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
-                default: Rectangle().fill(.quaternary)
-                }
-            }
-            .frame(width: 40, height: 40)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(song.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isCurrent ? .pink : .primary)
-                        .lineLimit(1)
-
-                    if isHovered || player.isLiked(song.id) || DownloadManager.shared.isDownloaded(song.id) || DownloadManager.shared.isDownloading(song.id) {
-                        Button {
-                            player.toggleLike(for: song)
-                        } label: {
-                            Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
-                                .font(.system(size: 11))
-                                .foregroundStyle(player.isLiked(song.id) ? .pink : .secondary)
-                        }
-                        .buttonStyle(.plain)
-
-                        DownloadButton(song: song, iconSize: 11)
-                    }
-                }
-                Text("\(song.displayArtist) · \(song.displayAlbum)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            Text(song.durationText)
-                .font(.system(size: 12).monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 6)
-        .background(isHovered ? Color.primary.opacity(0.04) : .clear)
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-        .onTapGesture { player.play(song) }
-        .contextMenu {
-            Button {
-                player.play(song)
-            } label: {
-                Label("立即播放", systemImage: "play.fill")
-            }
-
-            Button {
-                player.playNext(song)
-            } label: {
-                Label("下一首播放", systemImage: "text.insert")
-            }
-
-            Button {
-                player.addToPlaylist(song)
-            } label: {
-                Label("添加到播放列表", systemImage: "text.badge.plus")
-            }
-
-            Divider()
-
-            if DownloadManager.shared.isDownloaded(song.id) {
-                Button {
-                    DownloadManager.shared.revealInFinder(song.id)
-                } label: {
-                    Label("在访达中显示", systemImage: "folder")
-                }
-
-                Button(role: .destructive) {
-                    DownloadManager.shared.deleteDownload(song.id)
-                } label: {
-                    Label("删除已下载文件", systemImage: "trash")
-                }
-            } else {
-                Button {
-                    DownloadManager.shared.downloadSong(song)
-                } label: {
-                    Label("下载歌曲", systemImage: "arrow.down.circle")
-                }
-            }
-
-            Divider()
-
-            Button {
-                player.toggleLike(for: song)
-            } label: {
-                Label(player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌",
-                      systemImage: player.isLiked(song.id) ? "heart.slash" : "heart")
-            }
-        }
     }
 }
 

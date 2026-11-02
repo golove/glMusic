@@ -68,9 +68,21 @@ final class DownloadManager: NSObject, @unchecked Sendable {
 
     // MARK: - State
 
-    var downloadedSongs: [DownloadedSong] = []
+    var downloadedSongs: [DownloadedSong] = [] {
+        didSet {
+            downloadedSongIds = Set(downloadedSongs.map(\.id))
+        }
+    }
+    /// 内存缓存已下载 ID 集合，加速 isDownloaded 频繁查询 (O(1) 替代文件系统 I/O)
+    private(set) var downloadedSongIds: Set<Int> = []
     var activeDownloads: [Int: Double] = [:]       // songId -> progress (0.0 ... 1.0)
     var downloadErrors: [Int: String] = [:]       // songId -> errorMessage
+
+    // MARK: - Concurrency & Queue Management
+
+    private let maxConcurrentDownloads = 3
+    private var waitingQueue: [APISong] = []
+    private var activeTaskCount: Int = 0
 
     // MARK: - Internal Tasks & Metadata
 
@@ -81,19 +93,8 @@ final class DownloadManager: NSObject, @unchecked Sendable {
 
     // MARK: - Directory Paths
 
-    /// 沙盒内持久化下载目录 (Documents/Downloads)
-    var downloadsDirectory: URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let dir = docs.appendingPathComponent("Downloads", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            do {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
-            } catch {
-                print("❌ 创建下载目录失败: \(error)")
-            }
-        }
-        return dir
-    }
+    /// 沙盒内持久化下载目录 (Documents/Downloads)，启动时初始化一次避免重复 I/O
+    let downloadsDirectory: URL
 
     private var metadataFileURL: URL {
         downloadsDirectory.appendingPathComponent("downloads_metadata.json")
@@ -102,27 +103,37 @@ final class DownloadManager: NSObject, @unchecked Sendable {
     // MARK: - Init
 
     override init() {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = docs.appendingPathComponent("Downloads", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
+        }
+        self.downloadsDirectory = dir
+
         super.init()
+
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 45
         config.timeoutIntervalForResource = 600
         self.urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        _ = self.downloadsDirectory
         loadSavedMetadata()
     }
 
     // MARK: - Queries
 
+    /// 极速内存查询已下载状态，无文件系统阻塞
     func isDownloaded(_ songId: Int) -> Bool {
-        if let song = downloadedSongs.first(where: { $0.id == songId }) {
-            let audioURL = downloadsDirectory.appendingPathComponent(song.fileName)
-            return FileManager.default.fileExists(atPath: audioURL.path)
-        }
-        return false
+        downloadedSongIds.contains(songId)
     }
 
     func isDownloading(_ songId: Int) -> Bool {
-        activeDownloads[songId] != nil
+        activeDownloads[songId] != nil || isWaiting(songId)
+    }
+
+    func isWaiting(_ songId: Int) -> Bool {
+        lock.withLock {
+            waitingQueue.contains(where: { $0.id == songId })
+        }
     }
 
     func downloadProgress(_ songId: Int) -> Double? {
@@ -135,6 +146,9 @@ final class DownloadManager: NSObject, @unchecked Sendable {
         }
         if let prog = activeDownloads[songId] {
             return .downloading(progress: prog)
+        }
+        if isWaiting(songId) {
+            return .waiting
         }
         if let err = downloadErrors[songId] {
             return .failed(error: err)
@@ -176,125 +190,151 @@ final class DownloadManager: NSObject, @unchecked Sendable {
         return ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
     }
 
-    // MARK: - Download Operations
+    // MARK: - Download Operations & Queue Control
 
     func downloadSong(_ song: APISong) {
         if isDownloaded(song.id) || isDownloading(song.id) { return }
 
-        activeDownloads[song.id] = 0.02
-        downloadErrors.removeValue(forKey: song.id)
-
-        Task {
-            do {
-                // 1. 获取音频 URL（优先最高品质 lossless → exhigh → standard，灰色歌曲 Unblock 匹配）
-                var urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "lossless")
-                if urlStr == nil || urlStr?.isEmpty == true {
-                    urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "exhigh")
-                }
-                if urlStr == nil || urlStr?.isEmpty == true {
-                    urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "standard")
-                }
-                if urlStr == nil || urlStr?.isEmpty == true {
-                    urlStr = try await NetworkManager.shared.songURLMatch(id: song.id)
-                }
-
-                guard let finalUrlStr = urlStr, !finalUrlStr.isEmpty,
-                      let remoteURL = URL(string: finalUrlStr) else {
-                    await MainActor.run {
-                        self.activeDownloads.removeValue(forKey: song.id)
-                        self.downloadErrors[song.id] = "无法获取音频下载地址"
-                    }
-                    return
-                }
-
-                // 2. 下载歌词文件并本地保存 (含翻译)
-                var localLrcName: String? = nil
-                do {
-                    let lrcResp = try await NetworkManager.shared.lyrics(id: song.id)
-                    if let rawLrc = lrcResp.lrc?.lyric, !rawLrc.isEmpty {
-                        let lrcFileName = "\(song.id).lrc"
-                        let lrcFile = self.downloadsDirectory.appendingPathComponent(lrcFileName)
-                        try rawLrc.write(to: lrcFile, atomically: true, encoding: .utf8)
-                        localLrcName = lrcFileName
-                    }
-                    if let transLrc = lrcResp.tlyric?.lyric, !transLrc.isEmpty {
-                        let transFileName = "\(song.id)_trans.lrc"
-                        let transFile = self.downloadsDirectory.appendingPathComponent(transFileName)
-                        try transLrc.write(to: transFile, atomically: true, encoding: .utf8)
-                    }
-                } catch {
-                    print("歌词缓存跳过: \(error)")
-                }
-
-                // 3. 下载封面并本地保存
-                var localCoverName: String? = nil
-                if let coverUrlStr = song.coverUrl, let cURL = URL(string: coverUrlStr) {
-                    do {
-                        let (imgData, _) = try await URLSession.shared.data(from: cURL)
-                        let coverFileName = "\(song.id)_cover.jpg"
-                        let coverFile = self.downloadsDirectory.appendingPathComponent(coverFileName)
-                        try imgData.write(to: coverFile)
-                        localCoverName = coverFileName
-                    } catch {
-                        print("封面缓存跳过: \(error)")
-                    }
-                }
-
-                // 4. 计算音频文件名
-                let ext: String = {
-                    let rawExt = remoteURL.pathExtension.lowercased()
-                    if ["flac", "mp3", "m4a", "wav", "aac", "ogg"].contains(rawExt) {
-                        return rawExt
-                    }
-                    return "mp3"
-                }()
-
-                let cleanTitle = self.sanitizeFileName("\(song.name) - \(song.displayArtist)")
-                let audioFileName = "\(song.id)_\(cleanTitle).\(ext)"
-                let destinationURL = self.downloadsDirectory.appendingPathComponent(audioFileName)
-
-                let pending = DownloadedSong(
-                    id: song.id,
-                    name: song.name,
-                    artist: song.displayArtist,
-                    album: song.displayAlbum,
-                    coverUrl: song.coverUrl,
-                    durationMs: song.durationMs,
-                    fileName: audioFileName,
-                    localCoverName: localCoverName,
-                    localLyricName: localLrcName,
-                    fileSize: 0,
-                    downloadedAt: Date()
-                )
-
-                // 5. 启动 URLSessionDownloadTask
-                let task = self.urlSession.downloadTask(with: remoteURL)
-                task.taskDescription = "\(song.id)"
-
-                self.lock.withLock {
-                    self.pendingItems[song.id] = (pending, destinationURL)
-                    self.downloadTasks[song.id] = task
-                }
-
-                await MainActor.run {
-                    task.resume()
-                }
-            } catch {
-                await MainActor.run {
-                    self.activeDownloads.removeValue(forKey: song.id)
-                    self.downloadErrors[song.id] = error.localizedDescription
-                }
+        lock.withLock {
+            if !waitingQueue.contains(where: { $0.id == song.id }) {
+                waitingQueue.append(song)
             }
         }
+        processQueue()
     }
 
     func downloadAll(_ songs: [APISong]) {
-        for song in songs {
-            downloadSong(song)
+        let toQueue = songs.filter { !isDownloaded($0.id) && !isDownloading($0.id) }
+        guard !toQueue.isEmpty else { return }
+
+        lock.withLock {
+            for song in toQueue {
+                if !waitingQueue.contains(where: { $0.id == song.id }) {
+                    waitingQueue.append(song)
+                }
+            }
+        }
+        processQueue()
+    }
+
+    private func processQueue() {
+        var nextSong: APISong? = nil
+        lock.withLock {
+            if activeTaskCount < maxConcurrentDownloads && !waitingQueue.isEmpty {
+                nextSong = waitingQueue.removeFirst()
+                activeTaskCount += 1
+            }
+        }
+
+        guard let song = nextSong else { return }
+
+        DispatchQueue.main.async {
+            self.activeDownloads[song.id] = 0.02
+            self.downloadErrors.removeValue(forKey: song.id)
+        }
+
+        Task {
+            await startDownloadTask(for: song)
+        }
+    }
+
+    private func finishActiveTask(for songId: Int) {
+        lock.withLock {
+            activeTaskCount = max(0, activeTaskCount - 1)
+        }
+        processQueue()
+    }
+
+    private func startDownloadTask(for song: APISong) async {
+        do {
+            // 1. 获取音频 URL（优先最高品质 lossless → exhigh → standard，灰色歌曲 Unblock 匹配）
+            var urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "lossless")
+            if urlStr == nil || urlStr?.isEmpty == true {
+                urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "exhigh")
+            }
+            if urlStr == nil || urlStr?.isEmpty == true {
+                urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "standard")
+            }
+            if urlStr == nil || urlStr?.isEmpty == true {
+                urlStr = try await NetworkManager.shared.songURLMatch(id: song.id)
+            }
+
+            guard let finalUrl = urlStr, !finalUrl.isEmpty,
+                  let remoteAudioURL = URL(string: finalUrl) else {
+                throw NSError(domain: "DownloadManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "无法获取可下载的音频播放源"])
+            }
+
+            // 2. 推断音频文件扩展名
+            let ext = remoteAudioURL.pathExtension.isEmpty ? "mp3" : remoteAudioURL.pathExtension
+            let safeTitle = sanitizeFileName("\(song.id)_\(song.name) - \(song.displayArtist)")
+            let audioFileName = "\(safeTitle).\(ext)"
+            let audioDestination = downloadsDirectory.appendingPathComponent(audioFileName)
+
+            // 3. 异步下载歌词并保存为本地 .lrc 文件
+            var lyricFileName: String? = nil
+            if let lyricResp = try? await NetworkManager.shared.lyrics(id: song.id),
+               let lrcText = lyricResp.lrc?.lyric, !lrcText.isEmpty {
+                let lrcName = "\(song.id)_\(sanitizeFileName(song.name)).lrc"
+                let lrcURL = downloadsDirectory.appendingPathComponent(lrcName)
+                try? lrcText.write(to: lrcURL, atomically: true, encoding: .utf8)
+                lyricFileName = lrcName
+
+                // 若有双语翻译歌词，一并保存
+                if let transText = lyricResp.tlyric?.lyric, !transText.isEmpty {
+                    let transURL = downloadsDirectory.appendingPathComponent("\(song.id)_trans.lrc")
+                    try? transText.write(to: transURL, atomically: true, encoding: .utf8)
+                }
+            }
+
+            // 4. 异步下载封面并保存为本地图片
+            var coverFileName: String? = nil
+            if let coverUrlStr = song.coverUrl, let coverRemoteURL = URL(string: coverUrlStr) {
+                if let (coverData, _) = try? await URLSession.shared.data(from: coverRemoteURL) {
+                    let covName = "\(song.id)_cover.jpg"
+                    let covURL = downloadsDirectory.appendingPathComponent(covName)
+                    try? coverData.write(to: covURL)
+                    coverFileName = covName
+                }
+            }
+
+            // 5. 构建元数据模型
+            let downloadedSong = DownloadedSong(
+                id: song.id,
+                name: song.name,
+                artist: song.displayArtist,
+                album: song.displayAlbum,
+                coverUrl: song.coverUrl,
+                durationMs: song.durationMs,
+                fileName: audioFileName,
+                localCoverName: coverFileName,
+                localLyricName: lyricFileName,
+                fileSize: 0,
+                downloadedAt: Date()
+            )
+
+            // 6. 创建后台下载任务
+            let task = urlSession.downloadTask(with: remoteAudioURL)
+            task.taskDescription = "\(song.id)"
+
+            lock.withLock {
+                pendingItems[song.id] = (downloadedSong, audioDestination)
+                downloadTasks[song.id] = task
+            }
+
+            task.resume()
+        } catch {
+            await MainActor.run {
+                self.activeDownloads.removeValue(forKey: song.id)
+                self.downloadErrors[song.id] = error.localizedDescription
+            }
+            finishActiveTask(for: song.id)
         }
     }
 
     func cancelDownload(_ songId: Int) {
+        lock.withLock {
+            waitingQueue.removeAll(where: { $0.id == songId })
+        }
         let task = lock.withLock { () -> URLSessionDownloadTask? in
             pendingItems.removeValue(forKey: songId)
             return downloadTasks.removeValue(forKey: songId)
@@ -304,6 +344,7 @@ final class DownloadManager: NSObject, @unchecked Sendable {
             self.activeDownloads.removeValue(forKey: songId)
             self.downloadErrors.removeValue(forKey: songId)
         }
+        finishActiveTask(for: songId)
     }
 
     // MARK: - Deletion & Management
@@ -385,7 +426,6 @@ final class DownloadManager: NSObject, @unchecked Sendable {
         let invalid = CharacterSet(charactersIn: "/\\?%*|\"<>:")
         let cleaned = name.components(separatedBy: invalid).joined(separator: "_")
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 限制文件名长度，避免长路径触发文件系统异常
         if trimmed.count > 100 {
             return String(trimmed.prefix(100))
         }
@@ -419,14 +459,15 @@ extension DownloadManager: URLSessionDownloadDelegate {
             return pendingItems.removeValue(forKey: songId)
         }
 
-        guard var (song, destination) = item else {
+        guard let item else {
             print("⚠️ 未找到 songId=\(songId) 的待保存下载信息")
+            finishActiveTask(for: songId)
             return
         }
+        var song = item.song
+        let destination = item.destination
 
-        // 2. 关键：必须在此委托方法返回前在当前线程同步完成文件的持久化移动！
-        // 苹果官方规范：location 是临时文件（CFNetworkDownload_xxx.tmp），delegate 方法一旦返回系统将立即自动删除该文件。
-        // 切勿将其包裹在 DispatchQueue.main.async 中延迟执行，否则会导致源文件丢失报错（No such file or directory）。
+        // 2. 同步完成文件持久化移动，防止临时文件被系统回收
         do {
             let targetDir = destination.deletingLastPathComponent()
             if !FileManager.default.fileExists(atPath: targetDir.path) {
@@ -437,7 +478,6 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 try? FileManager.default.removeItem(at: destination)
             }
 
-            // 优先使用 moveItem 移动临时文件，失败时尝试 copyItem
             do {
                 try FileManager.default.moveItem(at: location, to: destination)
             } catch {
@@ -464,6 +504,8 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 self.downloadErrors[songId] = error.localizedDescription
             }
         }
+
+        finishActiveTask(for: songId)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -481,5 +523,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 print("❌ 下载任务出错: \(error)")
             }
         }
+
+        finishActiveTask(for: songId)
     }
 }

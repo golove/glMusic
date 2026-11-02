@@ -115,7 +115,7 @@ struct RadioDetailView: View {
                         .padding(.horizontal, 24)
                         .padding(.bottom, 6)
 
-                        Divider().padding(.horizontal, 24)
+//                        Divider().padding(.horizontal, 24)
                     }
                     .background(.ultraThinMaterial)
                     .zIndex(2)
@@ -151,7 +151,7 @@ struct RadioDetailView: View {
     private var headerSection: some View {
         HStack(alignment: .top, spacing: 20) {
             // 电台封面
-            AsyncImage(url: URL(string: radio?.picUrl ?? "")) { phase in
+            AsyncImage(url: URL(string: radio?.displayCover ?? radio?.picUrl ?? "")) { phase in
                 switch phase {
                 case .success(let image):
                     image.resizable().aspectRatio(contentMode: .fill)
@@ -183,7 +183,7 @@ struct RadioDetailView: View {
                 // 主播与订阅量
                 HStack(spacing: 8) {
                     if let dj = radio?.dj {
-                        if let avatar = dj.avatarUrl, let aURL = URL(string: avatar) {
+                        if let avatar = dj.displayAvatar ?? dj.avatarUrl, let aURL = URL(string: avatar) {
                             AsyncImage(url: aURL) { phase in
                                 if let img = phase.image {
                                     img.resizable().aspectRatio(contentMode: .fill)
@@ -217,67 +217,8 @@ struct RadioDetailView: View {
                 }
 
                 // 播放控制按钮群
-                HStack(spacing: 12) {
-                    Button {
-                        if !songs.isEmpty {
-                            player.playAll(songs, from: 0)
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 12))
-                            Text("播放全部")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 7)
-                        .background(.pink)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        if !songs.isEmpty {
-                            let shuffled = songs.shuffled()
-                            player.playAll(shuffled, from: 0)
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "shuffle")
-                                .font(.system(size: 12))
-                            Text("随机播放")
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(.quaternary)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    // 下载全部
-                    Button {
-                        if !songs.isEmpty {
-                            DownloadManager.shared.downloadAll(songs)
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.system(size: 12))
-                            Text("下载全部")
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(.quaternary)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.top, 4)
+                PlaybackActionBar(songs: songs, playTitle: "播放全部")
+                    .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

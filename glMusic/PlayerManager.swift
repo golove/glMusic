@@ -7,7 +7,9 @@
 
 import SwiftUI
 import AVFoundation
+import MediaPlayer
 
+@MainActor
 @Observable
 final class PlayerManager {
 
@@ -61,13 +63,14 @@ final class PlayerManager {
             let target = newValue * duration
             currentTime = target
             player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+            updateNowPlaying()
         }
     }
 
     var currentTimeText: String { formatTime(currentTime) }
     var remainingTimeText: String { "-" + formatTime(max(0, duration - currentTime)) }
 
-    // MARK: - Init
+    // MARK: - Init & Deinit
 
     init() {
         let savedVol = UserDefaults.standard.double(forKey: "player_volume")
@@ -77,6 +80,7 @@ final class PlayerManager {
         player.volume = Float(volume)
         setupTimeObserver()
         setupEndObserver()
+        setupRemoteCommands()
     }
 
     // MARK: - Play Song
@@ -99,6 +103,9 @@ final class PlayerManager {
         // Save last played
         UserDefaults.standard.set(song.id, forKey: "last_played_song_id")
 
+        updateNowPlaying()
+        fetchArtwork(for: song)
+
         Task {
             async let playTask: Void = loadAndPlay(songId: song.id)
             async let lyricTask: Void = loadLyrics(for: song.id)
@@ -116,6 +123,7 @@ final class PlayerManager {
     func seek(to time: TimeInterval) {
         currentTime = min(max(time, 0), duration)
         player.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
+        updateNowPlaying()
     }
 
     private func loadAndPlay(songId: Int) async {
@@ -125,18 +133,22 @@ final class PlayerManager {
             guard currentSong?.id == songId else { return }
             let item = AVPlayerItem(url: localURL)
             itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
-                guard let self = self else { return }
-                if observedItem.status == .failed {
-                    let errMsg = observedItem.error?.localizedDescription ?? "未知错误"
-                    print("❌ 本地音频播放失败: \(errMsg)")
-                    self.isPlaying = false
-                    self.isLoading = false
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if observedItem.status == .failed {
+                        let errMsg = observedItem.error?.localizedDescription ?? "未知错误"
+                        print("❌ 本地音频播放失败: \(errMsg)")
+                        self.isPlaying = false
+                        self.isLoading = false
+                        self.updateNowPlaying()
+                    }
                 }
             }
             player.replaceCurrentItem(with: item)
             player.play()
             isPlaying = true
             isLoading = false
+            updateNowPlaying()
             return
         }
 
@@ -163,6 +175,7 @@ final class PlayerManager {
                     next()
                 } else {
                     isPlaying = false
+                    updateNowPlaying()
                 }
                 return
             }
@@ -173,21 +186,26 @@ final class PlayerManager {
             print("▶️ 播放: \(currentSong?.name ?? "") → \(finalUrl.prefix(80))...")
             let item = AVPlayerItem(url: url)
             itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
-                guard let self = self else { return }
-                if observedItem.status == .failed {
-                    let errMsg = observedItem.error?.localizedDescription ?? "未知错误"
-                    print("❌ 音频加载失败: \(errMsg)")
-                    self.isPlaying = false
-                    self.isLoading = false
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if observedItem.status == .failed {
+                        let errMsg = observedItem.error?.localizedDescription ?? "未知错误"
+                        print("❌ 音频加载失败: \(errMsg)")
+                        self.isPlaying = false
+                        self.isLoading = false
+                        self.updateNowPlaying()
+                    }
                 }
             }
             player.replaceCurrentItem(with: item)
             player.play()
             isPlaying = true
             isLoading = false
+            updateNowPlaying()
         } catch {
             print("❌ 播放失败: \(error)")
             isLoading = false
+            updateNowPlaying()
         }
     }
 
@@ -198,70 +216,78 @@ final class PlayerManager {
         lyrics = []
         currentLyricIndex = 0
 
-        // 优先读取本地已缓存或下载的歌词文本 (支持双语翻译)
+        // 优先检查本地是否下载了离线歌词
         if let localLrc = DownloadManager.shared.localLyrics(for: songId) {
             let localTrans = DownloadManager.shared.localTranslation(for: songId)
-            let parsed = Self.parseLRC(lrc: localLrc, translation: localTrans)
-            if !parsed.isEmpty {
-                self.lyrics = parsed
-                isLoadingLyrics = false
-                return
-            }
+            let parsed = parseLyrics(lrc: localLrc, translation: localTrans)
+            lyrics = parsed
+            isLoadingLyrics = false
+            return
         }
 
         do {
             let resp = try await NetworkManager.shared.lyrics(id: songId)
-            let parsed = Self.parseLRC(lrc: resp.lrc?.lyric ?? "", translation: resp.tlyric?.lyric)
-            self.lyrics = parsed
+            let parsed = parseLyrics(lrc: resp.lrc?.lyric, translation: resp.tlyric?.lyric)
+            lyrics = parsed
         } catch {
-            print("加载歌词失败: \(error)")
+            lyrics = [LyricLine(time: 0, text: "暂无歌词")]
         }
         isLoadingLyrics = false
     }
 
-    static func parseLRC(lrc: String, translation: String? = nil) -> [LyricLine] {
-        var transMap: [Int: String] = [:]
-        if let trans = translation {
-            for line in trans.components(separatedBy: .newlines) {
-                if let (time, text) = parseLine(line), !text.trimmingCharacters(in: .whitespaces).isEmpty {
-                    let key = Int(time * 10)
-                    transMap[key] = text.trimmingCharacters(in: .whitespaces)
+    private func parseLyrics(lrc: String?, translation: String?) -> [LyricLine] {
+        guard let lrc = lrc, !lrc.isEmpty else { return [] }
+
+        var lines: [LyricLine] = []
+        let pattern = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/
+
+        for rawLine in lrc.components(separatedBy: .newlines) {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            if let match = trimmed.firstMatch(of: pattern) {
+                let min = Double(match.1) ?? 0
+                let sec = Double(match.2) ?? 0
+                let msStr = match.3.map(String.init) ?? "0"
+                let ms = (Double(msStr) ?? 0) / (msStr.count == 3 ? 1000.0 : 100.0)
+                let time = min * 60 + sec + ms
+                let text = String(match.4).trimmingCharacters(in: .whitespaces)
+
+                if !text.isEmpty {
+                    lines.append(LyricLine(time: time, text: text))
                 }
             }
         }
 
-        var result: [LyricLine] = []
-        for line in lrc.components(separatedBy: .newlines) {
-            if let (time, text) = parseLine(line) {
-                let trimmed = text.trimmingCharacters(in: .whitespaces)
-                if !trimmed.isEmpty {
-                    let key = Int(time * 10)
-                    var matchedTrans: String? = transMap[key]
-                    if matchedTrans == nil {
-                        for offset in [-2, -1, 1, 2] {
-                            if let t = transMap[key + offset] {
-                                matchedTrans = t
-                                break
-                            }
-                        }
+        // 匹配翻译歌词
+        if let trans = translation, !trans.isEmpty {
+            var transDict: [Int: String] = [:] // time in ms -> text
+            for rawLine in trans.components(separatedBy: .newlines) {
+                let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+                if let match = trimmed.firstMatch(of: pattern) {
+                    let min = Double(match.1) ?? 0
+                    let sec = Double(match.2) ?? 0
+                    let msStr = match.3.map(String.init) ?? "0"
+                    let ms = (Double(msStr) ?? 0) / (msStr.count == 3 ? 1000.0 : 100.0)
+                    let timeMs = Int((min * 60 + sec + ms) * 10) // 100ms 精度
+                    let text = String(match.4).trimmingCharacters(in: .whitespaces)
+                    if !text.isEmpty {
+                        transDict[timeMs] = text
                     }
-                    result.append(LyricLine(time: time, text: trimmed, translation: matchedTrans))
+                }
+            }
+
+            for i in 0..<lines.count {
+                let key = Int(lines[i].time * 10)
+                // 允许 ±200ms 的偏差匹配
+                for offset in [-2, -1, 0, 1, 2] {
+                    if let t = transDict[key + offset] {
+                        lines[i].translation = t
+                        break
+                    }
                 }
             }
         }
-        return result.sorted { $0.time < $1.time }
-    }
 
-    private static func parseLine(_ line: String) -> (TimeInterval, String)? {
-        guard line.hasPrefix("["), let closingBracket = line.firstIndex(of: "]") else { return nil }
-        let timeStr = String(line[line.index(after: line.startIndex)..<closingBracket])
-        let text = String(line[line.index(after: closingBracket)...])
-
-        let parts = timeStr.split(separator: ":")
-        guard parts.count == 2,
-              let minutes = Double(parts[0]),
-              let seconds = Double(parts[1]) else { return nil }
-        return (minutes * 60.0 + seconds, text)
+        return lines.sorted { $0.time < $1.time }
     }
 
     // MARK: - Likes
@@ -277,15 +303,28 @@ final class PlayerManager {
         } else {
             likedSongIds.insert(song.id)
         }
+
         Task {
             do {
-                _ = try await NetworkManager.shared.likeSong(id: song.id, like: !currentlyLiked)
+                let success = try await NetworkManager.shared.likeSong(id: song.id, like: !currentlyLiked)
+                if !success {
+                    // 回滚
+                    await MainActor.run {
+                        if currentlyLiked {
+                            self.likedSongIds.insert(song.id)
+                        } else {
+                            self.likedSongIds.remove(song.id)
+                        }
+                    }
+                }
             } catch {
-                print("Like error: \(error)")
-                if currentlyLiked {
-                    self.likedSongIds.insert(song.id)
-                } else {
-                    self.likedSongIds.remove(song.id)
+                print("点赞操作失败: \(error)")
+                await MainActor.run {
+                    if currentlyLiked {
+                        self.likedSongIds.insert(song.id)
+                    } else {
+                        self.likedSongIds.remove(song.id)
+                    }
                 }
             }
         }
@@ -296,30 +335,11 @@ final class PlayerManager {
             let ids = try await NetworkManager.shared.likeList(uid: uid)
             likedSongIds = Set(ids)
         } catch {
-            print("加载喜欢音乐失败: \(error)")
+            print("加载喜欢列表失败: \(error)")
         }
     }
 
     // MARK: - Queue Management
-
-    func removeFromPlaylist(song: APISong) {
-        if let idx = playlist.firstIndex(where: { $0.id == song.id }) {
-            playlist.remove(at: idx)
-            if let cur = currentSong, let newIdx = playlist.firstIndex(where: { $0.id == cur.id }) {
-                currentIndex = newIdx
-            }
-        }
-    }
-
-    func clearPlaylist() {
-        if let cur = currentSong {
-            playlist = [cur]
-            currentIndex = 0
-        } else {
-            playlist = []
-            currentIndex = -1
-        }
-    }
 
     func addToPlaylist(_ song: APISong) {
         if !playlist.contains(where: { $0.id == song.id }) {
@@ -328,17 +348,74 @@ final class PlayerManager {
     }
 
     func playNext(_ song: APISong) {
-        playlist.removeAll(where: { $0.id == song.id })
-        let insertIndex = min(currentIndex + 1, playlist.count)
-        playlist.insert(song, at: insertIndex)
+        if let idx = playlist.firstIndex(where: { $0.id == song.id }) {
+            playlist.remove(at: idx)
+        }
+        let insertIdx = min(currentIndex + 1, playlist.count)
+        playlist.insert(song, at: insertIdx)
     }
 
-    // MARK: - Controls
+    func removeFromPlaylist(at index: Int) {
+        guard index >= 0 && index < playlist.count else { return }
+        playlist.remove(at: index)
+        if index < currentIndex {
+            currentIndex -= 1
+        } else if index == currentIndex {
+            if !playlist.isEmpty {
+                currentIndex = min(currentIndex, playlist.count - 1)
+                play(playlist[currentIndex])
+            } else {
+                pause()
+                currentSong = nil
+                currentIndex = -1
+                updateNowPlaying()
+            }
+        }
+    }
+
+    func removeFromPlaylist(song: APISong) {
+        if let idx = playlist.firstIndex(where: { $0.id == song.id }) {
+            removeFromPlaylist(at: idx)
+        }
+    }
+
+    func clearQueue() {
+        if let current = currentSong {
+            playlist = [current]
+            currentIndex = 0
+        } else {
+            playlist.removeAll()
+            currentIndex = -1
+        }
+    }
+
+    func clearPlaylist() {
+        playlist.removeAll()
+        currentIndex = -1
+        pause()
+        currentSong = nil
+        updateNowPlaying()
+    }
+
+    // MARK: - Playback Controls
+
+    func pause() {
+        player.pause()
+        isPlaying = false
+        updateNowPlaying()
+    }
+
+    func resume() {
+        player.play()
+        isPlaying = true
+        updateNowPlaying()
+    }
 
     func togglePlay() {
         if isPlaying {
             player.pause()
             isPlaying = false
+            updateNowPlaying()
         } else {
             // 1. 如果播放项不存在或处于失败状态，但有当前歌曲，则重新发起网络请求并播放
             if player.currentItem == nil || player.currentItem?.status == .failed {
@@ -367,22 +444,27 @@ final class PlayerManager {
                 currentTime = 0
                 currentLyricIndex = 0
                 player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
-                    guard let self else { return }
-                    if !finished || self.player.currentItem?.status == .failed {
-                        if let song = self.currentSong {
-                            self.play(song)
-                            return
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if !finished || self.player.currentItem?.status == .failed {
+                            if let song = self.currentSong {
+                                self.play(song)
+                                return
+                            }
                         }
+                        self.player.play()
+                        self.isPlaying = true
+                        self.updateNowPlaying()
                     }
-                    self.player.play()
-                    self.isPlaying = true
                 }
                 isPlaying = true
+                updateNowPlaying()
                 return
             }
 
             player.play()
             isPlaying = true
+            updateNowPlaying()
         }
     }
 
@@ -401,6 +483,7 @@ final class PlayerManager {
             player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
             currentTime = 0
             currentLyricIndex = 0
+            updateNowPlaying()
             return
         }
         guard !playlist.isEmpty else { return }
@@ -418,6 +501,87 @@ final class PlayerManager {
         }
     }
 
+    // MARK: - Media Center & Now Playing Integration
+
+    private func updateNowPlaying() {
+        guard let song = currentSong else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            return
+        }
+
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: song.name,
+            MPMediaItemPropertyArtist: song.displayArtist,
+            MPMediaItemPropertyAlbumTitle: song.displayAlbum,
+            MPMediaItemPropertyPlaybackDuration: duration > 0 ? duration : Double(song.durationMs) / 1000.0,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+        ]
+
+        if let currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo,
+           let artwork = currentInfo[MPMediaItemPropertyArtwork] {
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func fetchArtwork(for song: APISong) {
+        guard let coverUrl = song.coverUrl, let url = URL(string: coverUrl) else { return }
+        Task { [weak self] in
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let nsImage = NSImage(data: data) else { return }
+            await MainActor.run { [weak self] in
+                guard let self = self, self.currentSong?.id == song.id else { return }
+                var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in nsImage }
+                info[MPMediaItemPropertyArtwork] = artwork
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            }
+        }
+    }
+
+    private func setupRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+
+        center.playCommand.isEnabled = true
+        center.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in self?.resume() }
+            return .success
+        }
+
+        center.pauseCommand.isEnabled = true
+        center.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in self?.pause() }
+            return .success
+        }
+
+        center.togglePlayPauseCommand.isEnabled = true
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in self?.togglePlay() }
+            return .success
+        }
+
+        center.nextTrackCommand.isEnabled = true
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in self?.next() }
+            return .success
+        }
+
+        center.previousTrackCommand.isEnabled = true
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in self?.previous() }
+            return .success
+        }
+
+        center.changePlaybackPositionCommand.isEnabled = true
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let posEvent = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            Task { @MainActor [weak self] in self?.seek(to: posEvent.positionTime) }
+            return .success
+        }
+    }
+
     // MARK: - Observers
 
     private func setupTimeObserver() {
@@ -425,17 +589,19 @@ final class PlayerManager {
             forInterval: CMTime(seconds: 0.3, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
-            guard let self else { return }
-            let t = time.seconds
-            if t.isFinite {
-                self.currentTime = t
-                if !self.lyrics.isEmpty {
-                    if let idx = self.lyrics.lastIndex(where: { $0.time <= t }) {
-                        if self.currentLyricIndex != idx {
-                            self.currentLyricIndex = idx
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let t = time.seconds
+                if t.isFinite {
+                    self.currentTime = t
+                    if !self.lyrics.isEmpty {
+                        if let idx = self.lyrics.lastIndex(where: { $0.time <= t }) {
+                            if self.currentLyricIndex != idx {
+                                self.currentLyricIndex = idx
+                            }
+                        } else {
+                            self.currentLyricIndex = 0
                         }
-                    } else {
-                        self.currentLyricIndex = 0
                     }
                 }
             }
@@ -448,33 +614,39 @@ final class PlayerManager {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
 
-            // 仅响应当前正在播放的 item 的结束通知
-            if let item = notification.object as? AVPlayerItem,
-               let currentItem = self.player.currentItem,
-               item != currentItem {
-                return
-            }
-
-            switch self.repeatMode {
-            case .one:
-                self.currentTime = 0
-                self.currentLyricIndex = 0
-                self.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-                    self?.player.play()
-                    self?.isPlaying = true
+                // 仅响应当前正在播放的 item 的结束通知
+                if let item = notification.object as? AVPlayerItem,
+                   let currentItem = self.player.currentItem,
+                   item != currentItem {
+                    return
                 }
-            case .all:
-                self.next()
-            case .off:
-                if self.currentIndex < self.playlist.count - 1 {
-                    self.next()
-                } else {
-                    self.isPlaying = false
+
+                switch self.repeatMode {
+                case .one:
                     self.currentTime = 0
                     self.currentLyricIndex = 0
-                    self.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+                    self.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                        Task { @MainActor [weak self] in
+                            self?.player.play()
+                            self?.isPlaying = true
+                            self?.updateNowPlaying()
+                        }
+                    }
+                case .all:
+                    self.next()
+                case .off:
+                    if self.currentIndex < self.playlist.count - 1 {
+                        self.next()
+                    } else {
+                        self.isPlaying = false
+                        self.currentTime = 0
+                        self.currentLyricIndex = 0
+                        self.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+                        self.updateNowPlaying()
+                    }
                 }
             }
         }

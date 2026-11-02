@@ -81,33 +81,6 @@ struct LyricsView: View {
         )
     }
 
-    // MARK: - Top Navigation Bar
-
-    private var topNavigationBar: some View {
-        VStack {
-            // 真正水平视觉居中的曲目简要信息 (不受两端按钮宽度不对称影响)
-            if let song = player.currentSong {
-                VStack(spacing: 2) {
-                    Text(song.name)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.6), radius: 4, y: 1)
-                        .lineLimit(1)
-                    Text(song.displayArtist)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-//                .padding(.horizontal, 150)
-            }
-
-      
-        }
-
-    }
-
     // MARK: - Background Artwork
 
     private var backgroundArtwork: some View {

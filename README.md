@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="glMusic/Assets.xcassets/AppIcon.appiconset/appicon_128x128@2x.png" width="128" height="128" alt="glMusic Icon" />
+  <img src="glMusic/Assets.xcassets/AppIcon.appiconset/AppIcon-5 1.png" width="128" height="128" alt="glMusic Icon" />
 </p>
 
 <h1 align="center">glMusic</h1>
@@ -167,6 +167,15 @@ xcodebuild -project glMusic.xcodeproj -scheme glMusic -destination 'platform=mac
 - 支持通过 `NSWorkspace` 原生唤醒访达直接高亮定位目标音频文件，无需额外的外部文件读写授权弹窗。
 
 ---
+
+
+---
+## ⚠️安装后提示文件损坏打不开
+***终端运行下面这条命令***
+```bash
+ xattr -dr com.apple.quarantine /Applications/glMusic.app
+ ```
+ 
 
 ## 📄 开源许可证
 

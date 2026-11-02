@@ -19,7 +19,6 @@ struct ArtistDetailView: View {
     @State private var hotSongs: [APISong] = []
     @State private var albums: [APIAlbumDetail] = []
     @State private var isLoading = true
-    @State private var hoveredSongId: Int?
     // true 时使用 Preview 模拟数据；正常运行保持 false
     var isPreview: Bool = false
 
@@ -45,134 +44,13 @@ struct ArtistDetailView: View {
 
                             LazyVStack(spacing: 0) {
                                 ForEach(Array(hotSongs.prefix(30).enumerated()), id: \.element.id) { idx, song in
-                                    let isPlaying = player.currentSong?.id == song.id
-                                    let isHovered = hoveredSongId == song.id
-
-                                    HStack(spacing: 0) {
-                                        // Index
-                                        ZStack {
-                                            if isPlaying {
-                                                Image(systemName: player.isPlaying ? "speaker.wave.2.fill" : "pause.fill")
-                                                    .font(.system(size: 10))
-                                                    .foregroundStyle(.pink)
-                                            } else if isHovered {
-                                                Image(systemName: "play.fill")
-                                                    .font(.system(size: 10))
-                                                    .foregroundStyle(.primary)
-                                            } else {
-                                                Text("\(idx + 1)")
-                                                    .font(.system(size: 12).monospacedDigit())
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        .frame(width: 36)
-
-                                        // Cover
-                                        AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                                            switch phase {
-                                            case .success(let img):
-                                                img.resizable().aspectRatio(contentMode: .fill)
-                                            default:
-                                                Rectangle().fill(.quaternary)
-                                            }
-                                        }
-                                        .frame(width: 36, height: 36)
-                                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                                        .padding(.trailing, 10)
-
-                                        // Title
-                                        HStack(spacing: 8) {
-                                            Text(song.name)
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundStyle(isPlaying ? .pink : .primary)
-                                                .lineLimit(1)
-
-                                            if isHovered || player.isLiked(song.id) || DownloadManager.shared.isDownloaded(song.id) || DownloadManager.shared.isDownloading(song.id) {
-                                                Button {
-                                                    player.toggleLike(for: song)
-                                                } label: {
-                                                    Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
-                                                        .font(.system(size: 11))
-                                                        .foregroundStyle(player.isLiked(song.id) ? .pink : .secondary)
-                                                }
-                                                .buttonStyle(.plain)
-
-                                                DownloadButton(song: song, iconSize: 11)
-                                            }
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                                        // Album
-                                        Text(song.displayAlbum)
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                            .frame(width: 180, alignment: .leading)
-
-                                        // Duration
-                                        Text(song.durationText)
-                                            .font(.system(size: 13).monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 60, alignment: .trailing)
-                                    }
-                                    .padding(.horizontal, 24)
-                                    .padding(.vertical, 6)
-                                    .background(isHovered ? Color.primary.opacity(0.04) : .clear)
-                                    .contentShape(Rectangle())
-                                    .onHover { h in hoveredSongId = h ? song.id : nil }
-                                    .onTapGesture {
-                                        player.playAll(hotSongs, from: idx)
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            player.play(song)
-                                        } label: {
-                                            Label("立即播放", systemImage: "play.fill")
-                                        }
-
-                                        Button {
-                                            player.playNext(song)
-                                        } label: {
-                                            Label("下一首播放", systemImage: "text.insert")
-                                        }
-
-                                        Button {
-                                            player.addToPlaylist(song)
-                                        } label: {
-                                            Label("添加到播放列表", systemImage: "text.badge.plus")
-                                        }
-
-                                        Divider()
-
-                                        if DownloadManager.shared.isDownloaded(song.id) {
-                                            Button {
-                                                DownloadManager.shared.revealInFinder(song.id)
-                                            } label: {
-                                                Label("在访达中显示", systemImage: "folder")
-                                            }
-
-                                            Button(role: .destructive) {
-                                                DownloadManager.shared.deleteDownload(song.id)
-                                            } label: {
-                                                Label("删除已下载文件", systemImage: "trash")
-                                            }
-                                        } else {
-                                            Button {
-                                                DownloadManager.shared.downloadSong(song)
-                                            } label: {
-                                                Label("下载歌曲", systemImage: "arrow.down.circle")
-                                            }
-                                        }
-
-                                        Divider()
-
-                                        Button {
-                                            player.toggleLike(for: song)
-                                        } label: {
-                                            Label(player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌",
-                                                  systemImage: player.isLiked(song.id) ? "heart.slash" : "heart")
-                                        }
-                                    }
+                                    UnifiedSongRow(
+                                        song: song,
+                                        index: idx + 1,
+                                        allSongs: hotSongs,
+                                        showArtist: false,
+                                        albumWidth: 180
+                                    )
                                 }
                             }
                         }
@@ -253,17 +131,20 @@ struct ArtistDetailView: View {
          
             HStack(spacing: 24) {
                 // Avatar
-                AsyncImage(url: URL(string: artist?.picUrl ?? artist?.img1v1Url ?? "")) { phase in
+                AsyncImage(url: URL(string: artist?.avatarUrl ?? artist?.coverUrl ?? "")) { phase in
                     switch phase {
                     case .success(let img):
                         img.resizable().aspectRatio(contentMode: .fill)
-                    default:
+                    case .failure:
                         Circle().fill(.quaternary)
                             .overlay(Image(systemName: "music.mic").font(.largeTitle).foregroundStyle(.tertiary))
+                    default:
+                        Circle().fill(.quaternary)
+                            .overlay(ProgressView())
                     }
                 }
                 .frame(width: 160, height: 160)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(Circle())
                 .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
 
                 // Info
@@ -309,7 +190,6 @@ struct ArtistDetailView: View {
                         }
                         .buttonStyle(.plain)
                     }
-//                    .padding(.top,10)
                    
                     
                 }

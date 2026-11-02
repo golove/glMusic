@@ -372,7 +372,7 @@ struct RadioStationCard: View {
                 Button {
                     onSelect?()
                 } label: {
-                    AsyncImage(url: URL(string: radio.picUrl ?? "")) { phase in
+                    AsyncImage(url: URL(string: radio.displayCover ?? radio.picUrl ?? "")) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().aspectRatio(contentMode: .fill)

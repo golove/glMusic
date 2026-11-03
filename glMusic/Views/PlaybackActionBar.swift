@@ -16,6 +16,7 @@ struct PlaybackActionBar: View {
     var showDownloadAll: Bool = true
     var downloadHelpText: String = "下载全部歌曲到本地"
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         HStack(spacing: 12) {
@@ -30,7 +31,7 @@ struct PlaybackActionBar: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 8)
-                .background(.pink, in: Capsule())
+                .background(themeManager.accentColor, in: Capsule())
                 .foregroundStyle(.white)
             }
             .buttonStyle(.plain)

@@ -13,6 +13,7 @@ struct AlbumDetailView: View {
         print("press back")
     }
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
 
     @State private var album: APIAlbumDetail?
     @State private var songs: [APISong] = []
@@ -76,7 +77,7 @@ struct AlbumDetailView: View {
                             }
                             .buttonStyle(.plain)
                             .font(.system(size: 12))
-                            .foregroundStyle(.pink)
+                            .foregroundStyle(themeManager.accentColor)
                         }
                         .padding(.horizontal, 24)
                         .padding(.top, 24)
@@ -116,8 +117,8 @@ struct AlbumDetailView: View {
    
                 }
                 .padding(8)
-                .foregroundStyle(.pink)
-                .background(.pink.opacity(0.12), in: Circle())
+                .foregroundStyle(themeManager.accentColor)
+                .background(themeManager.tintColor, in: Circle())
                 
             }
             .padding(.horizontal , 6)
@@ -163,7 +164,7 @@ struct AlbumDetailView: View {
                 if let artistName = album?.artist?.name {
                     Text(artistName)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(themeManager.accentColor)
                 }
 
                 HStack(spacing: 6) {

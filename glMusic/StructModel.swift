@@ -30,7 +30,7 @@ enum SideBar {
             .init(id: "artists",    name: "艺人",     systemImage: "music.mic",              children: nil),
             .init(id: "albums",     name: "专辑",     systemImage: "square.stack",            children: nil),
             .init(id: "songs",      name: "歌曲",     systemImage: "music.note",             children: nil),
-            .init(id: "downloaded", name: "已下载",   systemImage: "arrow.down.circle.fill", children: nil),
+            .init(id: "downloaded", name: "本地与下载", systemImage: "arrow.down.circle.fill", children: nil),
         ]),
     ]
 }

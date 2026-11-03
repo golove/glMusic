@@ -11,6 +11,7 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var selection: String? = "home"
     @State private var navigationStack: [String] = []
     @State private var isNavigatingBack = false
@@ -23,9 +24,9 @@ struct ContentView: View {
                     .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
             } detail: {
                 ZStack {
-                   
+                    // 主题流光氛围背景 (优雅通透，自适应随主题平滑渐变)
+                    contentThemeBackground
 
-                    
                     detailView
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea(.container, edges: .top)
@@ -40,10 +41,8 @@ struct ContentView: View {
             }
            
             .toolbar(removing: .sidebarToggle)
-
-            .toolbarBackground(.hidden, for: .windowToolbar)
             .containerBackground(.thinMaterial, for: .window)
-//            .ignoresSafeArea()
+            .toolbarBackground(.hidden, for: .windowToolbar)
 
             // 全屏动效歌词视图 (Apple Music 风格)
             if player.isShowingLyrics {
@@ -80,6 +79,12 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Ambient Theme Background
+
+    private var contentThemeBackground: some View {
+        NightBokehBackground()
     }
 
     // MARK: - Navigation

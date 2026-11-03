@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PlayerBar: View {
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var isHovering = false
     var body: some View {
         HStack{
@@ -43,7 +44,7 @@ struct PlayerBar: View {
                 Image(systemName: "shuffle")
                     
                     .font(.system(size: 12))
-                    .foregroundStyle(player.isShuffled ? .pink : .secondary)
+                    .foregroundStyle(player.isShuffled ? themeManager.accentColor : .secondary)
                    
             }
             .buttonStyle(.plain)
@@ -74,7 +75,7 @@ struct PlayerBar: View {
             Button { player.cycleRepeat() } label: {
                 Image(systemName: player.repeatMode.systemImage)
                     .font(.system(size: 12))
-                    .foregroundStyle(player.repeatMode.isActive ? .pink : .secondary)
+                    .foregroundStyle(player.repeatMode.isActive ? themeManager.accentColor : .secondary)
             }
             .buttonStyle(.plain)
         }
@@ -99,13 +100,22 @@ struct PlayerBar: View {
                             player.isShowingLyrics.toggle()
                         }
                     } label: {
-                        AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            default:
-                                Rectangle().fill(.quaternary)
-                                    .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
+                        Group {
+                            if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
+                               let img = NSImage(contentsOf: localURL) {
+                                Image(nsImage: img)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } else {
+                                AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    default:
+                                        Rectangle().fill(.quaternary)
+                                            .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
+                                    }
+                                }
                             }
                         }
                         .overlay(content: {
@@ -145,7 +155,7 @@ struct PlayerBar: View {
                     } label: {
                         Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
                             .font(.system(size: 13))
-                            .foregroundStyle(player.isLiked(song.id) ? .pink : .secondary)
+                            .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
                     }
                     .frame(width: 28, height: 28)
                     .buttonStyle(.plain)
@@ -223,7 +233,7 @@ struct PlayerBar: View {
             } label: {
                 Image(systemName: player.isShowingQueue ? "list.bullet.rectangle.fill" : "list.bullet")
                     .font(.system(size: 13))
-                    .foregroundStyle(player.isShowingQueue ? .pink : .secondary)
+                    .foregroundStyle(player.isShowingQueue ? themeManager.accentColor : .secondary)
             }
             .buttonStyle(.plain)
             .help("待播清单")

@@ -14,6 +14,7 @@ struct ArtistDetailView: View {
         print("press back")
     }
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
 
     @State private var artist: APIArtistDetail?
     @State private var hotSongs: [APISong] = []
@@ -107,9 +108,9 @@ struct ArtistDetailView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12, weight: .bold))
                 }
-                .foregroundStyle(.pink)
+                .foregroundStyle(themeManager.accentColor)
                 .padding(8)
-                .background(.pink.opacity(0.12), in: Circle())
+                .background(themeManager.tintColor, in: Circle())
               
             }
             .padding(.horizontal , 6)
@@ -185,7 +186,7 @@ struct ArtistDetailView: View {
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(.pink, in: Capsule())
+                            .background(themeManager.accentColor, in: Capsule())
                             .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)

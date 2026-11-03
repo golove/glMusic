@@ -9,6 +9,7 @@ import SwiftUI
 
 struct LyricsView: View {
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var hoveredLineId: UUID?
     @State private var autoScroll = true
    
@@ -88,19 +89,31 @@ struct LyricsView: View {
             ZStack {
                 Color.black
 
-                if let song = player.currentSong, let url = URL(string: song.coverUrl ?? "") {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                                .clipped()
-                                .blur(radius: 65)
-                                .scaleEffect(1.15)
-                                .opacity(0.48)
-                        default:
-                            Color.clear
+                if let song = player.currentSong {
+                    if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
+                       let img = NSImage(contentsOf: localURL) {
+                        Image(nsImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                            .blur(radius: 65)
+                            .scaleEffect(1.15)
+                            .opacity(0.48)
+                    } else if let url = URL(string: song.coverUrl ?? "") {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: proxy.size.width, height: proxy.size.height)
+                                    .clipped()
+                                    .blur(radius: 65)
+                                    .scaleEffect(1.15)
+                                    .opacity(0.48)
+                            default:
+                                Color.clear
+                            }
                         }
                     }
                 }
@@ -127,22 +140,31 @@ struct LyricsView: View {
 
         return VStack( spacing: 12) {
             if let song = player.currentSong {
-                AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                    switch phase {
-                    case .success(let img):
-                        img.resizable()
+                Group {
+                    if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
+                       let img = NSImage(contentsOf: localURL) {
+                        Image(nsImage: img)
+                            .resizable()
                             .aspectRatio(contentMode: .fill)
-                    default:
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.white.opacity(0.1))
-                            .overlay(
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 44))
-                                    .foregroundStyle(.white.opacity(0.4))
-                            )
+                    } else {
+                        AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            default:
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(.white.opacity(0.1))
+                                    .overlay(
+                                        Image(systemName: "music.note")
+                                            .font(.system(size: 44))
+                                            .foregroundStyle(.white.opacity(0.4))
+                                    )
+                            }
+                        }
                     }
                 }
-                .background(Color.cyan)
+                .background(Color.clear)
                 .frame(width: coverSize, height: coverSize)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
@@ -160,7 +182,7 @@ struct LyricsView: View {
                         } label: {
                             Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
                                 .font(.system(size: 18))
-                                .foregroundStyle(player.isLiked(song.id) ? .pink : .white.opacity(0.6))
+                                .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .white.opacity(0.6))
                         }
                         .buttonStyle(.plain)
                     }
@@ -202,7 +224,7 @@ struct LyricsView: View {
                         Image(systemName: "shuffle")
                             
                             .font(.system(size: 18))
-                            .foregroundStyle(player.isShuffled ? .pink : .secondary)
+                            .foregroundStyle(player.isShuffled ? themeManager.accentColor : .secondary)
                            
                     }
                     .buttonStyle(.plain)
@@ -233,7 +255,7 @@ struct LyricsView: View {
                     Button { player.cycleRepeat() } label: {
                         Image(systemName: player.repeatMode.systemImage)
                             .font(.system(size: 18))
-                            .foregroundStyle(player.repeatMode.isActive ? .pink : .secondary)
+                            .foregroundStyle(player.repeatMode.isActive ? themeManager.accentColor : .secondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -338,8 +360,8 @@ struct LyricsView: View {
    
                 }
                 .padding(8)
-                .foregroundStyle(.pink)
-                .background(.pink.opacity(0.12), in: Circle())
+                .foregroundStyle(themeManager.accentColor)
+                .background(themeManager.tintColor, in: Circle())
                 
             }
             .padding(.horizontal , 6)

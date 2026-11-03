@@ -10,6 +10,7 @@ import SwiftUI
 struct DownloadButton: View {
     let song: APISong
     var iconSize: CGFloat = 12
+    @Environment(ThemeManager.self) private var themeManager
     @State private var downloadManager = DownloadManager.shared
 
     var body: some View {
@@ -38,7 +39,7 @@ struct DownloadButton: View {
                 case .downloaded:
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.system(size: iconSize))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(themeManager.accentColor)
                         .help("已下载，支持离线播放 (右键更多操作)")
 
                 case .failed(let err):

@@ -11,6 +11,7 @@ struct Sidebar: View {
     let items = SideBar.items
     @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var userProfile: UserProfile?
     @State private var showLogin = false
     @State private var userPlaylists: [APIPlaylist] = []  // 用户创建的歌单
@@ -27,7 +28,7 @@ struct Sidebar: View {
                                     Text(child.name)
                                 } icon: {
                                     Image(systemName: child.systemImage ?? "circle")
-                                        .foregroundStyle(.pink)
+                                        .foregroundStyle(themeManager.accentColor)
                                 }
                                 .tag(child.id)
                             }
@@ -37,7 +38,7 @@ struct Sidebar: View {
                             Text(item.name)
                         } icon: {
                             Image(systemName: item.systemImage ?? "circle")
-                                .foregroundStyle(.pink)
+                                .foregroundStyle(themeManager.accentColor)
                         }
                         .tag(item.id)
                     }
@@ -142,6 +143,8 @@ struct Sidebar: View {
 
                 Spacer()
 
+                ThemePickerButton()
+
                 // 退出按钮
                 Button {
                     NetworkManager.shared.logout()
@@ -179,6 +182,8 @@ struct Sidebar: View {
                     }
                 }
                 .buttonStyle(.plain)
+
+                ThemePickerButton()
             }
         }
         .padding(.horizontal, 16)

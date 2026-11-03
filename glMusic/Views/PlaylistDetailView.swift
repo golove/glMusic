@@ -13,6 +13,7 @@ struct PlaylistDetailView: View {
         print("press back")
     }
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
 
     @State private var playlist: APIPlaylist?
     @State private var songs: [APISong] = []
@@ -106,9 +107,9 @@ struct PlaylistDetailView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .bold))
             
-                .foregroundStyle(.pink)
+                .foregroundStyle(themeManager.accentColor)
                 .padding(8)
-                .background(.pink.opacity(0.12), in: Circle())
+                .background(themeManager.tintColor, in: Circle())
 
             }
             .padding(.horizontal , 6)

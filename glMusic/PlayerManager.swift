@@ -152,7 +152,16 @@ final class PlayerManager {
             return
         }
 
-        // 2. 本地未下载，走网络流媒体加载
+        // 2. 本地未下载：若为本地导入歌曲 (songId < 0) 且本地文件不存在，直接提示错误，不请求网络
+        if songId < 0 {
+            print("❌ 本地导入音频文件不存在或已被移动 (songId: \(songId))")
+            isPlaying = false
+            isLoading = false
+            updateNowPlaying()
+            return
+        }
+
+        // 3. 走网络流媒体加载
         do {
             // 尝试 standard → exhigh 两种品质
             var urlStr = try await NetworkManager.shared.songURL(id: songId, level: "standard")
@@ -216,11 +225,18 @@ final class PlayerManager {
         lyrics = []
         currentLyricIndex = 0
 
-        // 优先检查本地是否下载了离线歌词
+        // 优先检查本地是否下载了离线歌词 / 本地伴生歌词
         if let localLrc = DownloadManager.shared.localLyrics(for: songId) {
             let localTrans = DownloadManager.shared.localTranslation(for: songId)
             let parsed = parseLyrics(lrc: localLrc, translation: localTrans)
             lyrics = parsed
+            isLoadingLyrics = false
+            return
+        }
+
+        // 若为本地导入歌曲 (songId < 0) 且无本地伴生歌词，直接展示暂无本地歌词，不请求网络
+        if songId < 0 {
+            lyrics = [LyricLine(time: 0, text: "暂无本地歌词")]
             isLoadingLyrics = false
             return
         }
@@ -527,6 +543,17 @@ final class PlayerManager {
     }
 
     private func fetchArtwork(for song: APISong) {
+        // 1. 优先检查本地封面 (已下载歌曲或本地导入歌曲)
+        if let localCoverURL = DownloadManager.shared.localCoverURL(for: song.id),
+           let nsImage = NSImage(contentsOf: localCoverURL) {
+            var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in nsImage }
+            info[MPMediaItemPropertyArtwork] = artwork
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            return
+        }
+
+        // 2. 本地不存在，异步拉取网络封面
         guard let coverUrl = song.coverUrl, let url = URL(string: coverUrl) else { return }
         Task { [weak self] in
             guard let (data, _) = try? await URLSession.shared.data(from: url),

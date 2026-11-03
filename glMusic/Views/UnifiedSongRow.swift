@@ -22,6 +22,7 @@ struct UnifiedSongRow: View {
     var onTap: (() -> Void)? = nil
 
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var isHovered: Bool = false
 
     var body: some View {
@@ -34,7 +35,7 @@ struct UnifiedSongRow: View {
                     if isCurrent {
                         Image(systemName: player.isPlaying ? "speaker.wave.2.fill" : "pause.fill")
                             .font(.system(size: 10))
-                            .foregroundStyle(.pink)
+                            .foregroundStyle(themeManager.accentColor)
                     } else if isHovered {
                         Image(systemName: "play.fill")
                             .font(.system(size: 10))
@@ -51,17 +52,26 @@ struct UnifiedSongRow: View {
             // MARK: - 封面 + 歌曲标题 + 操作徽标
             HStack(spacing: 10) {
                 if showCover {
-                    AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            Rectangle().fill(.quaternary)
-                                .overlay(
-                                    Image(systemName: "music.note")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.tertiary)
-                                )
+                    Group {
+                        if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
+                           let img = NSImage(contentsOf: localURL) {
+                            Image(nsImage: img)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
+                                switch phase {
+                                case .success(let img):
+                                    img.resizable().aspectRatio(contentMode: .fill)
+                                default:
+                                    Rectangle().fill(.quaternary)
+                                        .overlay(
+                                            Image(systemName: "music.note")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.tertiary)
+                                        )
+                                }
+                            }
                         }
                     }
                     .frame(width: 36, height: 36)
@@ -71,7 +81,7 @@ struct UnifiedSongRow: View {
                 HStack(spacing: 8) {
                     Text(song.name)
                         .font(.system(size: 13, weight: isCurrent ? .semibold : .regular))
-                        .foregroundStyle(isCurrent ? .pink : .primary)
+                        .foregroundStyle(isCurrent ? themeManager.accentColor : .primary)
                         .lineLimit(1)
 
                     if isHovered || player.isLiked(song.id) || DownloadManager.shared.isDownloaded(song.id) || DownloadManager.shared.isDownloading(song.id) {
@@ -80,7 +90,7 @@ struct UnifiedSongRow: View {
                         } label: {
                             Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
                                 .font(.system(size: 11))
-                                .foregroundStyle(player.isLiked(song.id) ? .pink : .secondary)
+                                .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
                         }
                         .buttonStyle(.plain)
 
@@ -119,7 +129,7 @@ struct UnifiedSongRow: View {
         .background(
             isHovered
                 ? Color.primary.opacity(0.04)
-                : (isCurrent ? Color.pink.opacity(0.04) : Color.clear)
+                : (isCurrent ? themeManager.accentColor.opacity(0.06) : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }

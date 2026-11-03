@@ -8,6 +8,8 @@
 import Foundation
 import SwiftUI
 import AppKit
+import AVFoundation
+import UniformTypeIdentifiers
 
 // MARK: - Downloaded Song Model
 
@@ -23,6 +25,15 @@ struct DownloadedSong: Codable, Identifiable, Hashable {
     let localLyricName: String?
     var fileSize: Int64
     let downloadedAt: Date
+    var isLocalImport: Bool? = false
+
+    var isLocal: Bool {
+        isLocalImport == true || id < 0
+    }
+
+    var sourceBadgeText: String {
+        isLocal ? "本地" : "已下载"
+    }
 
     var displayArtist: String { artist }
     var displayAlbum: String { album }
@@ -77,6 +88,16 @@ final class DownloadManager: NSObject, @unchecked Sendable {
     private(set) var downloadedSongIds: Set<Int> = []
     var activeDownloads: [Int: Double] = [:]       // songId -> progress (0.0 ... 1.0)
     var downloadErrors: [Int: String] = [:]       // songId -> errorMessage
+    var isImporting: Bool = false
+    var importStatusMessage: String? = nil
+
+    var localImportedCount: Int {
+        downloadedSongs.filter(\.isLocal).count
+    }
+
+    var remoteDownloadedCount: Int {
+        downloadedSongs.filter { !$0.isLocal }.count
+    }
 
     // MARK: - Concurrency & Queue Management
 
@@ -430,6 +451,379 @@ final class DownloadManager: NSObject, @unchecked Sendable {
             return String(trimmed.prefix(100))
         }
         return trimmed.isEmpty ? "song" : trimmed
+    }
+
+    // MARK: - Local Song Import (本地音乐导入)
+
+    /// 弹出系统原生文件/目录选择器导入本地音频
+    @MainActor
+    func openFilePickerToImport() {
+        let panel = NSOpenPanel()
+        panel.title = "选择本地音频文件或文件夹"
+        panel.message = "支持导入 MP3、FLAC、M4A、WAV、AAC、AIFF、ALAC、OGG 等音频格式"
+        panel.prompt = "导入"
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowedContentTypes = [
+            .audio,
+            .mp3,
+            UTType(filenameExtension: "flac") ?? .audio,
+            UTType(filenameExtension: "m4a") ?? .audio,
+            UTType(filenameExtension: "wav") ?? .audio,
+            UTType(filenameExtension: "aac") ?? .audio,
+            UTType(filenameExtension: "aiff") ?? .audio,
+            UTType(filenameExtension: "ogg") ?? .audio
+        ]
+
+        panel.begin { [weak self] response in
+            guard response == .OK else { return }
+            let urls = panel.urls
+            guard !urls.isEmpty else { return }
+
+            Task { @MainActor [weak self] in
+                await self?.importLocalSongs(from: urls)
+            }
+        }
+    }
+
+    private struct LocalMetadata {
+        var title: String
+        var artist: String
+        var album: String
+        var durationMs: Int
+        var artworkData: Data?
+        var lyricText: String?
+    }
+
+    /// 递归扫描并导入选中的音频文件或文件夹
+    @discardableResult
+    func importLocalSongs(from urls: [URL]) async -> (imported: Int, skipped: Int, failed: Int) {
+        let audioFiles = collectAudioFiles(from: urls)
+        guard !audioFiles.isEmpty else {
+            importStatusMessage = "未发现支持的音频文件"
+            Task {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                self.importStatusMessage = nil
+            }
+            return (0, 0, 0)
+        }
+
+        isImporting = true
+        var importedCount = 0
+        var skippedCount = 0
+        var failedCount = 0
+        var newlyImported: [DownloadedSong] = []
+
+        for (index, fileURL) in audioFiles.enumerated() {
+            importStatusMessage = "正在导入 (\(index + 1)/\(audioFiles.count)): \(fileURL.lastPathComponent)"
+
+            let meta = await extractMetadata(from: fileURL)
+            let ext = fileURL.pathExtension.isEmpty ? "mp3" : fileURL.pathExtension.lowercased()
+            let safeTitle = sanitizeFileName(meta.title)
+            let safeArtist = sanitizeFileName(meta.artist)
+
+            // 生成确定性的负数本地 ID
+            let baseIdentifier = "\(fileURL.lastPathComponent)_\(meta.durationMs)"
+            var songId = generateLocalSongId(for: baseIdentifier)
+            let candidateFileName = "local_\(abs(songId))_\(safeTitle) - \(safeArtist).\(ext)"
+
+            // 检查是否已存在同名或同名文件的歌曲
+            if downloadedSongs.contains(where: {
+                $0.fileName == candidateFileName ||
+                ($0.name == meta.title && $0.artist == meta.artist && abs($0.durationMs - meta.durationMs) < 1000)
+            }) {
+                skippedCount += 1
+                continue
+            }
+
+            // 确保 ID 在集合中绝对唯一
+            while downloadedSongIds.contains(songId) && downloadedSongs.first(where: { $0.id == songId })?.fileName != candidateFileName {
+                songId -= 1
+            }
+
+            let audioFileName = "local_\(abs(songId))_\(safeTitle) - \(safeArtist).\(ext)"
+            let targetAudioURL = downloadsDirectory.appendingPathComponent(audioFileName)
+
+            do {
+                // 复制音频文件到沙盒目录 (如果原本就在沙盒目录则跳过复制)
+                if fileURL.standardizedFileURL != targetAudioURL.standardizedFileURL {
+                    if FileManager.default.fileExists(atPath: targetAudioURL.path) {
+                        try? FileManager.default.removeItem(at: targetAudioURL)
+                    }
+                    try FileManager.default.copyItem(at: fileURL, to: targetAudioURL)
+                }
+
+                // 保存内嵌封面
+                var coverFileName: String? = nil
+                var coverURLString: String? = nil
+                if let artData = meta.artworkData {
+                    let covName = "local_\(abs(songId))_cover.jpg"
+                    let targetCoverURL = downloadsDirectory.appendingPathComponent(covName)
+                    try? artData.write(to: targetCoverURL)
+                    coverFileName = covName
+                    coverURLString = targetCoverURL.absoluteString
+                }
+
+                // 保存伴生歌词
+                var lyricFileName: String? = nil
+                if let lrc = meta.lyricText, !lrc.isEmpty {
+                    let lrcName = "local_\(abs(songId))_\(safeTitle).lrc"
+                    let targetLrcURL = downloadsDirectory.appendingPathComponent(lrcName)
+                    try? lrc.write(to: targetLrcURL, atomically: true, encoding: .utf8)
+                    lyricFileName = lrcName
+                }
+
+                let attrs = try? FileManager.default.attributesOfItem(atPath: targetAudioURL.path)
+                let fileSize = (attrs?[.size] as? Int64) ?? 0
+
+                let downloadedSong = DownloadedSong(
+                    id: songId,
+                    name: meta.title,
+                    artist: meta.artist,
+                    album: meta.album,
+                    coverUrl: coverURLString,
+                    durationMs: meta.durationMs,
+                    fileName: audioFileName,
+                    localCoverName: coverFileName,
+                    localLyricName: lyricFileName,
+                    fileSize: fileSize,
+                    downloadedAt: Date(),
+                    isLocalImport: true
+                )
+
+                newlyImported.append(downloadedSong)
+                importedCount += 1
+            } catch {
+                print("❌ 导入本地音频失败 (\(fileURL.lastPathComponent)): \(error)")
+                failedCount += 1
+            }
+        }
+
+        if !newlyImported.isEmpty {
+            for song in newlyImported {
+                downloadedSongs.removeAll(where: { $0.id == song.id || $0.fileName == song.fileName })
+                downloadedSongs.insert(song, at: 0)
+                downloadedSongIds.insert(song.id)
+            }
+            saveMetadata()
+        }
+
+        isImporting = false
+
+        if importedCount > 0 {
+            var msg = "成功导入 \(importedCount) 首本地歌曲"
+            if skippedCount > 0 {
+                msg += "（跳过 \(skippedCount) 首已存在）"
+            }
+            importStatusMessage = msg
+        } else if skippedCount > 0 {
+            importStatusMessage = "所选歌曲均已导入（跳过 \(skippedCount) 首）"
+        } else {
+            importStatusMessage = "未成功导入歌曲"
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            self.importStatusMessage = nil
+        }
+
+        return (importedCount, skippedCount, failedCount)
+    }
+
+    /// 递归扫描目录，收集所有支持的本地音频文件
+    private func collectAudioFiles(from urls: [URL]) -> [URL] {
+        let supportedExtensions: Set<String> = [
+            "mp3", "m4a", "flac", "wav", "aac", "aiff", "aif", "alac", "ogg"
+        ]
+        var result: [URL] = []
+        let fm = FileManager.default
+
+        for url in urls {
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: url.path, isDirectory: &isDir) {
+                if isDir.boolValue {
+                    if let enumerator = fm.enumerator(
+                        at: url,
+                        includingPropertiesForKeys: [.isRegularFileKey],
+                        options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                    ) {
+                        for case let fileURL as URL in enumerator {
+                            if supportedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                result.append(fileURL)
+                            }
+                        }
+                    }
+                } else {
+                    if supportedExtensions.contains(url.pathExtension.lowercased()) {
+                        result.append(url)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    /// 提取音频文件的元数据、时长、封面与伴生歌词
+    private func extractMetadata(from fileURL: URL) async -> LocalMetadata {
+        let asset = AVURLAsset(url: fileURL)
+        let filename = fileURL.deletingPathExtension().lastPathComponent
+
+        var title: String?
+        var artist: String?
+        var album: String?
+        var durationMs: Int = 0
+        var artworkData: Data?
+        var lyricText: String?
+
+        // 1. 读取音频时长
+        if let dur = try? await asset.load(.duration) {
+            let seconds = CMTimeGetSeconds(dur)
+            if seconds.isFinite && seconds > 0 {
+                durationMs = Int(seconds * 1000)
+            }
+        }
+
+        // 2. 读取通用元数据 (CommonMetadata)
+        if let common = try? await asset.load(.commonMetadata) {
+            for item in common {
+                guard let key = item.commonKey?.rawValue else { continue }
+                switch key {
+                case "title":
+                    if let val = try? await item.load(.stringValue), !val.trimmingCharacters(in: .whitespaces).isEmpty {
+                        title = val.trimmingCharacters(in: .whitespaces)
+                    }
+                case "artist":
+                    if let val = try? await item.load(.stringValue), !val.trimmingCharacters(in: .whitespaces).isEmpty {
+                        artist = val.trimmingCharacters(in: .whitespaces)
+                    }
+                case "albumName":
+                    if let val = try? await item.load(.stringValue), !val.trimmingCharacters(in: .whitespaces).isEmpty {
+                        album = val.trimmingCharacters(in: .whitespaces)
+                    }
+                case "artwork":
+                    if let data = try? await item.load(.dataValue) {
+                        artworkData = data
+                    }
+                default:
+                    break
+                }
+            }
+        }
+
+        // 3. 读取格式特定元数据 (ID3 / iTunes / FLAC)
+        if let formats = try? await asset.load(.availableMetadataFormats) {
+            for format in formats {
+                if let items = try? await asset.loadMetadata(for: format) {
+                    for item in items {
+                        if title == nil {
+                            if item.identifier == .id3MetadataTitleDescription || item.identifier == .iTunesMetadataSongName {
+                                if let val = try? await item.load(.stringValue), !val.isEmpty {
+                                    title = val.trimmingCharacters(in: .whitespaces)
+                                }
+                            }
+                        }
+                        if artist == nil {
+                            if item.identifier == .id3MetadataLeadPerformer || item.identifier == .iTunesMetadataArtist {
+                                if let val = try? await item.load(.stringValue), !val.isEmpty {
+                                    artist = val.trimmingCharacters(in: .whitespaces)
+                                }
+                            }
+                        }
+                        if album == nil {
+                            if item.identifier == .id3MetadataAlbumTitle || item.identifier == .iTunesMetadataAlbum {
+                                if let val = try? await item.load(.stringValue), !val.isEmpty {
+                                    album = val.trimmingCharacters(in: .whitespaces)
+                                }
+                            }
+                        }
+                        if artworkData == nil {
+                            if item.identifier == .id3MetadataAttachedPicture || item.identifier == .iTunesMetadataCoverArt {
+                                artworkData = try? await item.load(.dataValue)
+                            }
+                        }
+                        if lyricText == nil {
+                            if item.identifier == .id3MetadataUnsynchronizedLyric || item.commonKey?.rawValue == "lyrics" {
+                                lyricText = try? await item.load(.stringValue)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. 优先检查同名同目录下的伴生 .lrc 歌词文件 (支持 UTF-8、Unicode 与 GB18030/GBK 编码)
+        let lrcCandidates = [
+            fileURL.deletingPathExtension().appendingPathExtension("lrc"),
+            fileURL.deletingPathExtension().appendingPathExtension("LRC")
+        ]
+        for candidate in lrcCandidates {
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                if let text = try? String(contentsOf: candidate, encoding: .utf8), !text.isEmpty {
+                    lyricText = text
+                    break
+                } else if let text = try? String(contentsOf: candidate, encoding: .unicode), !text.isEmpty {
+                    lyricText = text
+                    break
+                } else if let text = try? String(contentsOf: candidate, encoding: String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))), !text.isEmpty {
+                    lyricText = text
+                    break
+                }
+            }
+        }
+
+        // 5. 兜底与智能文件名解析 (如 "周杰伦 - 晴天" 或 "晴天")
+        var finalTitle = title ?? ""
+        var finalArtist = artist ?? ""
+        var finalAlbum = album ?? ""
+
+        if finalTitle.isEmpty {
+            if filename.contains(" - ") {
+                let parts = filename.components(separatedBy: " - ")
+                if parts.count >= 2 {
+                    if finalArtist.isEmpty {
+                        finalArtist = parts[0].trimmingCharacters(in: .whitespaces)
+                    }
+                    finalTitle = parts[1...].joined(separator: " - ").trimmingCharacters(in: .whitespaces)
+                } else {
+                    finalTitle = filename
+                }
+            } else {
+                finalTitle = filename
+            }
+        }
+
+        // 去除音轨序号前缀 (例如 "01. 晴天" 或 "01 - 晴天")
+        if let match = try? /^\d{1,3}[\.\-\s]+(.+)/.wholeMatch(in: finalTitle) {
+            finalTitle = String(match.1).trimmingCharacters(in: .whitespaces)
+        }
+
+        if finalArtist.isEmpty {
+            finalArtist = "未知艺人"
+        }
+        if finalAlbum.isEmpty {
+            finalAlbum = "本地音乐"
+        }
+
+        return LocalMetadata(
+            title: finalTitle,
+            artist: finalArtist,
+            album: finalAlbum,
+            durationMs: durationMs,
+            artworkData: artworkData,
+            lyricText: lyricText
+        )
+    }
+
+    /// 生成确定性的稳定负数本地 ID
+    private func generateLocalSongId(for filename: String) -> Int {
+        var hasher: UInt64 = 5381
+        for byte in filename.utf8 {
+            hasher = ((hasher << 5) &+ hasher) &+ UInt64(byte)
+        }
+        let positive = Int(hasher & 0x7FFFFFFF)
+        let safePositive = positive == 0 ? 1 : positive
+        return -safePositive
     }
 }
 

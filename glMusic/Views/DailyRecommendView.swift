@@ -9,6 +9,7 @@ import SwiftUI
 
 struct DailyRecommendView: View {
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var songs: [APISong] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -120,9 +121,9 @@ struct DailyRecommendView: View {
             // Calendar style Artwork
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(LinearGradient(colors: [.pink, .red.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(LinearGradient(colors: themeManager.currentTheme.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 140, height: 140)
-                    .shadow(color: .pink.opacity(0.3), radius: 12, y: 6)
+                    .shadow(color: themeManager.accentColor.opacity(0.3), radius: 12, y: 6)
 
                 VStack(spacing: 4) {
                     Text(todayWeekday)

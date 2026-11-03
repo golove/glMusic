@@ -11,14 +11,14 @@ import SwiftData
 @main
 struct glMusicApp: App {
     @State private var playerManager = PlayerManager()
-
- 
-      
+    @State private var themeManager = ThemeManager.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(playerManager)
+                .environment(themeManager)
+                .tint(themeManager.accentColor)
                 .environment(\.defaultMinListRowHeight, 36)
                 .task {
                     await ensureBasicCookie()
@@ -27,6 +27,28 @@ struct glMusicApp: App {
        
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 720)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("导入本地音乐...") {
+                    DownloadManager.shared.openFilePickerToImport()
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+            }
+
+            CommandMenu("主题风格") {
+                ForEach(AppTheme.allCases) { theme in
+                    Button {
+                        themeManager.select(theme)
+                    } label: {
+                        if themeManager.currentTheme == theme {
+                            Text("✓ \(theme.rawValue) (\(theme.englishName))")
+                        } else {
+                            Text("   \(theme.rawValue) (\(theme.englishName))")
+                        }
+                    }
+                }
+            }
+        }
         
     }
 

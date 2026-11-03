@@ -9,6 +9,7 @@ import SwiftUI
 
 struct QueueView: View {
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var hoveredSongId: Int?
 
     var body: some View {
@@ -31,7 +32,7 @@ struct QueueView: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(themeManager.accentColor)
                 }
 
                 Button {
@@ -93,6 +94,7 @@ private struct QueueRowView: View {
     let isHovered: Bool
     let onHover: (Bool) -> Void
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         let isCurrent = player.currentSong?.id == song.id
@@ -103,7 +105,7 @@ private struct QueueRowView: View {
                 if isCurrent {
                     Image(systemName: player.isPlaying ? "speaker.wave.2.fill" : "pause.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(themeManager.accentColor)
                 } else if isHovered {
                     Image(systemName: "play.fill")
                         .font(.system(size: 10))
@@ -132,7 +134,7 @@ private struct QueueRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(song.name)
                     .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
-                    .foregroundStyle(isCurrent ? .pink : .primary)
+                    .foregroundStyle(isCurrent ? themeManager.accentColor : .primary)
                     .lineLimit(1)
 
                 Text(song.displayArtist)
@@ -162,7 +164,7 @@ private struct QueueRowView: View {
                     if DownloadManager.shared.isDownloaded(song.id) {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 10))
-                            .foregroundStyle(.pink.opacity(0.8))
+                            .foregroundStyle(themeManager.accentColor.opacity(0.8))
                     }
                     Text(song.durationText)
                         .font(.system(size: 10).monospacedDigit())
@@ -175,7 +177,7 @@ private struct QueueRowView: View {
         .background(
             isHovered
                 ? Color.primary.opacity(0.06)
-                : (isCurrent ? Color.pink.opacity(0.08) : Color.clear),
+                : (isCurrent ? themeManager.tintColor : Color.clear),
             in: RoundedRectangle(cornerRadius: 6)
         )
         .contentShape(Rectangle())

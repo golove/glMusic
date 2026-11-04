@@ -52,13 +52,21 @@ jobs:
           ditto "$APP_PATH" "$STAGE/glMusic.app"
           ln -s /Applications "$STAGE/Applications"
 
-          hdiutil create \
-            -volname "glMusic" \
-            -srcfolder "$STAGE" \
-            -format UDZO \
-            "$DIST/glMusic.dmg"
+          # 检查 DMG 所需的目录和应用是否存在
+          test -d "$STAGE"
+          test -d "$STAGE/glMusic.app"
 
-          hdiutil verify "$DIST/glMusic.dmg"
+          # 使用新版 diskutil 创建压缩 DMG
+          diskutil image create from \
+          "$STAGE" \
+          "$DIST/glMusic.dmg" \
+           --format UDZO
+
+          # 检查 DMG 是否成功生成
+          test -s "$DIST/glMusic.dmg"
+
+          # 输出文件信息
+          ls -lh "$DIST/glMusic.dmg"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

@@ -147,22 +147,22 @@ glMusic/
 ### 环境要求
 - **macOS**：macOS 14.0 (Sonoma) 或更高版本 (全面支持 macOS 15 Sequoia)
 - **Xcode**：Xcode 15.0 或更高版本 (Swift 5.9 / Swift 6)
-- **后端服务**：需要本地或远程运行 [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)
+- **后端服务**：需要本地或远程运行 [NeteaseCloudMusicApi](https://docs-neteasecloudmusicapi.focalors.ltd/#/?id=neteasecloudmusicapienhanced)
 
 ### 1. 启动 API 后端服务
 在本地启动 Node.js 网易云 API 服务（默认端口 `3000`）：
 ```bash
 # 方式 1：使用 npx 快速运行
-npx NeteaseCloudMusicApi
+npx @neteasecloudmusicapienhanced/api@latest
 
 # 方式 2：使用 Docker 部署
-docker run -d -p 3000:3000 --name netease_api binaryify/netease_cloud_music_api
+docker run -d -p 3000:3000 --name ncm-api-enhanced moefurina/ncm-api-enhanced
 ```
 启动成功后，浏览器访问 `http://127.0.0.1:3000` 确认服务运行正常。
 
 ### 2. 克隆与打开项目
 ```bash
-git clone https://github.com/your-username/glMusic.git
+git clone https://github.com/golove/glMusic.git
 cd glMusic
 open glMusic.xcodeproj
 ```

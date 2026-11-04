@@ -26,6 +26,18 @@
 整体 UI 严格遵循 **macOS Human Interface Guidelines (HIG)**，高度还原 macOS 原生 **Apple Music** 的界面层次感与精致质感——包含原生窗口半透毛玻璃材质、梦幻城市夜景散景流光背景、自适应多色清新主题、悬浮胶囊播放条、动态专辑色全屏双语歌词、全功能本地音频导入、离线无损下载管理以及完整的广播与播客电台系统。
 
 ---
+##  ![alt text](camera.macro.png)程序截图
+<img width="1563" height="982" alt="Image" src="https://github.com/user-attachments/assets/057d1d26-a2fd-4636-b532-115b053ede10" />
+
+<img width="1563" height="982" alt="Image" src="https://github.com/user-attachments/assets/04dce898-24cb-4317-a217-84ec6a937d42" />
+
+<img width="1563" height="982" alt="Image" src="https://github.com/user-attachments/assets/df4023ef-d8ef-4f40-bee1-e075789aba91" />
+
+<img width="1563" height="982" alt="Image" src="https://github.com/user-attachments/assets/007f3c80-9084-47f7-ac03-02c80713b863" />
+
+
+---
+
 
 ## ✨ 核心特性
 

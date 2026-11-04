@@ -8,10 +8,15 @@
 import SwiftUI
 
 struct LyricsView: View {
+    @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @State private var hoveredLineId: UUID?
     @State private var autoScroll = true
+
+    init(selection: Binding<String?>? = nil) {
+        self._selection = selection ?? .constant(nil)
+    }
    
 
     // 统一左侧区域宽度 (封面、信息、进度条、播放按钮保持一致)
@@ -194,16 +199,40 @@ struct LyricsView: View {
                         .buttonStyle(.plain)
                     }
 
-                    Text(song.displayArtist)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .lineLimit(1)
+                    ArtistLinksView(
+                        artists: song.ar,
+                        fallbackText: song.displayArtist,
+                        fontSize: 13,
+                        weight: .medium,
+                        normalColor: .white.opacity(0.8),
+                        hoverColor: .white,
+                        separatorColor: .white.opacity(0.5)
+                    ) { artistId in
+                        navigateToArtist(id: artistId)
+                    }
 
                     if !song.displayAlbum.isEmpty {
-                        Text(song.displayAlbum)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .lineLimit(1)
+                        if let albumId = song.al?.id, albumId > 0 {
+                            ArtistClickableLabel(
+                                name: song.displayAlbum,
+                                fontSize: 11,
+                                weight: .regular,
+                                normalColor: .white.opacity(0.5),
+                                hoverColor: .white.opacity(0.9)
+                            ) {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    player.isShowingLyrics = false
+                                }
+                                withAnimation(.easeInOut(duration: 0.22)) {
+                                    selection = "album_\(albumId)"
+                                }
+                            }
+                        } else {
+                            Text(song.displayAlbum)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .lineLimit(1)
+                        }
                     }
                 }
                 .frame(width: coverSize + 80, alignment: .leading)
@@ -356,6 +385,15 @@ struct LyricsView: View {
     }
     
     
+    private func navigateToArtist(id: Int) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            player.isShowingLyrics = false
+        }
+        withAnimation(.easeInOut(duration: 0.22)) {
+            selection = "artist_\(id)"
+        }
+    }
+
     // MARK: - Top Pinned Bar
     private var topPinnedBar: some View {
         @Bindable var player = player

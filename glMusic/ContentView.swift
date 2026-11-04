@@ -33,7 +33,7 @@ struct ContentView: View {
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     // 悬浮胶囊播放栏
-                    PlayerBar()
+                    PlayerBar(selection: $selection)
                         .padding(.horizontal, 60)
                         .padding(.bottom, 16)
                         .zIndex(99)
@@ -46,7 +46,7 @@ struct ContentView: View {
 
             // 全屏动效歌词视图 (Apple Music 风格)
             if player.isShowingLyrics {
-                LyricsView()
+                LyricsView(selection: $selection)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     .zIndex(100)
             }

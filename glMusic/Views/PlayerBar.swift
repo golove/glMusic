@@ -8,9 +8,15 @@
 import SwiftUI
 
 struct PlayerBar: View {
+    @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @State private var isHovering = false
+
+    init(selection: Binding<String?>? = nil) {
+        self._selection = selection ?? .constant(nil)
+    }
+
     var body: some View {
         HStack{
             // MARK: - Left · Song Info
@@ -140,10 +146,16 @@ struct PlayerBar: View {
                         Text(song.name)
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
-                        Text(song.displayArtist)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        ArtistLinksView(
+                            artists: song.ar,
+                            fallbackText: song.displayArtist,
+                            fontSize: 11,
+                            weight: .regular,
+                            normalColor: .secondary,
+                            hoverColor: .primary
+                        ) { artistId in
+                            navigateToArtist(id: artistId)
+                        }
                     }
                     
                     if player.isLoading {
@@ -251,6 +263,15 @@ struct PlayerBar: View {
                 ProgressSlider(value: $player.volume, trackHeight: 3)
                     .frame(width: 96)
             }
+        }
+    }
+
+    private func navigateToArtist(id: Int) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            player.isShowingLyrics = false
+        }
+        withAnimation(.easeInOut(duration: 0.22)) {
+            selection = "artist_\(id)"
         }
     }
 

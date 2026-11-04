@@ -35,6 +35,47 @@ struct glMusicApp: App {
                 .keyboardShortcut("o", modifiers: [.command])
             }
 
+            CommandMenu("控制") {
+                Button(playerManager.isPlaying ? "暂停" : "播放") {
+                    playerManager.togglePlay()
+                }
+                .keyboardShortcut(.space, modifiers: [])
+
+                Button("下一首") {
+                    playerManager.next()
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command])
+
+                Button("上一首") {
+                    playerManager.previous()
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command])
+
+                Divider()
+
+                Button("调高音量") {
+                    playerManager.volume = min(1.0, playerManager.volume + 0.05)
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.command])
+
+                Button("调低音量") {
+                    playerManager.volume = max(0.0, playerManager.volume - 0.05)
+                }
+                .keyboardShortcut(.downArrow, modifiers: [.command])
+
+                Divider()
+
+                Button(playerManager.isShuffled ? "关闭随机播放" : "开启随机播放") {
+                    playerManager.toggleShuffle()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Button("切换循环模式") {
+                    playerManager.cycleRepeat()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+
             CommandMenu("主题风格") {
                 ForEach(AppTheme.allCases) { theme in
                     Button {

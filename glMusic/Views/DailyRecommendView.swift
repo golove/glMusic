@@ -186,4 +186,5 @@ struct DailyRecommendView: View {
 #Preview {
     DailyRecommendView()
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
 }

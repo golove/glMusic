@@ -226,4 +226,5 @@ struct Sidebar: View {
 
 #Preview {
     Sidebar(selection: .constant("home"))
+        .environment(ThemeManager.shared)
 }

@@ -567,5 +567,5 @@ struct DownloadedSongsView: View {
 #Preview {
     DownloadedSongsView()
         .environment(PlayerManager())
-        .environment(ThemeManager())
+        .environment(ThemeManager.shared)
 }

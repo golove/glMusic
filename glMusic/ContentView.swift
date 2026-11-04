@@ -55,18 +55,6 @@ struct ContentView: View {
             keyboardShortcuts
         }
         .background(WindowToolbarAccessor())
-        .onAppear {
-            // 确保窗口启动时清除初始第一响应者，防止焦点环/红框直接出现在 PlayerBar 按钮上
-            DispatchQueue.main.async {
-                NSApp.keyWindow?.makeFirstResponder(nil)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                NSApp.keyWindow?.makeFirstResponder(nil)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                NSApp.keyWindow?.makeFirstResponder(nil)
-            }
-        }
         .animation(.easeInOut(duration: 0.28), value: player.isShowingLyrics)
         .onChange(of: selection) { oldValue, newValue in
             guard !isNavigatingBack else { return }
@@ -167,19 +155,22 @@ struct ContentView: View {
 
     private var keyboardShortcuts: some View {
         Group {
-            Button("") { player.togglePlay() }
+            Button("返回上一级") { goBack() }
+                .keyboardShortcut("[", modifiers: [.command])
+
+            Button("播放/暂停") { player.togglePlay() }
                 .keyboardShortcut(.space, modifiers: [])
 
-            Button("") { player.previous() }
+            Button("上一首") { player.previous() }
                 .keyboardShortcut(.leftArrow, modifiers: [.command])
 
-            Button("") { player.next() }
+            Button("下一首") { player.next() }
                 .keyboardShortcut(.rightArrow, modifiers: [.command])
 
-            Button("") { player.volume = min(1.0, player.volume + 0.05) }
+            Button("调高音量") { player.volume = min(1.0, player.volume + 0.05) }
                 .keyboardShortcut(.upArrow, modifiers: [.command])
 
-            Button("") { player.volume = max(0.0, player.volume - 0.05) }
+            Button("调低音量") { player.volume = max(0.0, player.volume - 0.05) }
                 .keyboardShortcut(.downArrow, modifiers: [.command])
         }
         .frame(width: 0, height: 0)
@@ -190,4 +181,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
 }

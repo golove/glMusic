@@ -191,4 +191,5 @@ private struct QueueRowView: View {
 #Preview {
     QueueView()
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
 }

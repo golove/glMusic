@@ -8,41 +8,18 @@
 import AppKit
 import SwiftUI
 
-/// Window Toolbar Accessor: 清除系统默认的 sidebar toggle 按钮，并管理初始键盘焦点
+/// Window Toolbar Accessor: 清除系统默认的 sidebar toggle 按钮，并优化窗口样式与初始键盘焦点
 struct WindowToolbarAccessor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
     class Coordinator {
-        var eventMonitor: Any?
         var didClearInitialFocus = false
-
-        deinit {
-            if let monitor = eventMonitor {
-                NSEvent.removeMonitor(monitor)
-            }
-        }
     }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-
-        // 监听鼠标点击：当用户用鼠标点击窗口时，若当前不是在文本框中输入，自动清除焦点环，保持界面干净
-        if context.coordinator.eventMonitor == nil {
-            context.coordinator.eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
-                DispatchQueue.main.async {
-                    if let window = NSApp.keyWindow {
-                        let isTextInput = (window.firstResponder is NSTextView) || (window.firstResponder is NSTextField)
-                        if !isTextInput {
-                            window.makeFirstResponder(nil)
-                        }
-                    }
-                }
-                return event
-            }
-        }
-
         DispatchQueue.main.async {
             configureWindow(view.window, coordinator: context.coordinator)
         }
@@ -81,17 +58,11 @@ struct WindowToolbarAccessor: NSViewRepresentable {
             }
         }
 
-        // 关键：防止启动时第一个控件（PlayerBar 的随机播放按钮）自动抢占焦点并展示红框/焦点环
+        // 启动时避免抢占焦点，但保留正常键盘交互链路
         window.initialFirstResponder = nil
         if !coordinator.didClearInitialFocus {
             coordinator.didClearInitialFocus = true
             DispatchQueue.main.async {
-                window.makeFirstResponder(nil)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                window.makeFirstResponder(nil)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 window.makeFirstResponder(nil)
             }
         }

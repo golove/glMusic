@@ -193,3 +193,12 @@ struct NightBokehBackground: View {
         }
     }
 }
+
+#Preview {
+    ZStack {
+        Color.black
+        NightBokehBackground()
+    }
+    .frame(width: 800, height: 600)
+    .environment(ThemeManager.shared)
+}

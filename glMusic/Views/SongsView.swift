@@ -88,4 +88,5 @@ struct SongsView: View {
 #Preview {
     SongsView()
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
 }

@@ -10,6 +10,8 @@ import SwiftUI
 struct HomeView: View {
     @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
+    @FocusState private var focusedId: String?
     @State private var banners: [APIBanner] = []
     @State private var playlists: [APIPlaylist] = []
     @State private var newSongs: [APISong] = []
@@ -26,69 +28,311 @@ struct HomeView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 32) {
-                // MARK: - Title
-                Text("现在就听")
-                    .font(.system(size: 32, weight: .bold))
-                    .padding(.horizontal, 28)
-                    .padding(.top, 16)
+        ScrollViewReader { verticalProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 32) {
+                    // MARK: - Title
+                    Text("现在就听")
+                        .font(.system(size: 32, weight: .bold))
+                        .padding(.horizontal, 28)
+                        .padding(.top, 16)
 
-                if isLoading {
-                    ProgressView("加载精彩内容...")
-                        .frame(maxWidth: .infinity, minHeight: 260)
-                } else if let err = errorMsg {
-                    errorView(err)
-                } else {
-                    // MARK: - 焦点推荐 Banners (Apple Music 顶部大卡片)
-                    if !banners.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 20) {
-                                ForEach(banners) { b in
-                                    FeaturedBannerCard(banner: b) {
-                                        handleBannerClick(b)
+                    if isLoading {
+                        ProgressView("加载精彩内容...")
+                            .frame(maxWidth: .infinity, minHeight: 260)
+                    } else if let err = errorMsg {
+                        errorView(err)
+                    } else {
+                        // MARK: - 焦点推荐 Banners (Apple Music 顶部大卡片)
+                        if !banners.isEmpty {
+                            ScrollViewReader { bannerProxy in
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 20) {
+                                        ForEach(Array(banners.enumerated()), id: \.offset) { idx, b in
+                                            FeaturedBannerCard(
+                                                banner: b,
+                                                isFocused: focusedId == "banner_\(idx)"
+                                            ) {
+                                                focusedId = "banner_\(idx)"
+                                                handleBannerClick(b)
+                                            }
+                                            .id("banner_\(idx)")
+                                            .focusable()
+                                            .focused($focusedId, equals: "banner_\(idx)")
+                                            .focusEffectDisabled()
+                                        }
+                                    }
+                                    .padding(.horizontal, 28)
+                                    .scrollTargetLayout()
+                                }
+                                .onChange(of: focusedId) { _, newId in
+                                    guard let newId, newId.hasPrefix("banner_") else { return }
+                                    if let idx = Int(newId.replacingOccurrences(of: "banner_", with: "")) {
+                                        let anchor: UnitPoint = (idx == 0) ? .leading : (idx == banners.count - 1 ? .trailing : .center)
+                                        withAnimation(.easeInOut(duration: 0.28)) {
+                                            bannerProxy.scrollTo(newId, anchor: anchor)
+                                        }
                                     }
                                 }
                             }
-                            .padding(.horizontal, 28)
+                            .id("section_banners")
                         }
-                    }
 
-                    // MARK: - 推荐歌单
-                    if !playlists.isEmpty {
-                        VStack(alignment: .leading, spacing: 14) {
-                            sectionHeader("推荐歌单")
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 18) {
-                                    ForEach(playlists) { pl in
-                                        PlaylistCard(playlist: pl) {
-                                            selection = "playlist_\(pl.id)"
+                        // MARK: - 推荐歌单
+                        if !playlists.isEmpty {
+                            VStack(alignment: .leading, spacing: 14) {
+                                sectionHeader("推荐歌单")
+                                ScrollViewReader { playlistProxy in
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 18) {
+                                            ForEach(Array(playlists.enumerated()), id: \.offset) { idx, pl in
+                                                PlaylistCard(
+                                                    playlist: pl,
+                                                    isFocused: focusedId == "playlist_\(idx)"
+                                                ) {
+                                                    focusedId = "playlist_\(idx)"
+                                                    selection = "playlist_\(pl.id)"
+                                                }
+                                                .id("playlist_\(idx)")
+                                                .focusable()
+                                                .focused($focusedId, equals: "playlist_\(idx)")
+                                                .focusEffectDisabled()
+                                            }
                                         }
+                                        .padding(.horizontal, 28)
+                                        .scrollTargetLayout()
+                                    }
+                                    .onChange(of: focusedId) { _, newId in
+                                        guard let newId, newId.hasPrefix("playlist_") else { return }
+                                        if let idx = Int(newId.replacingOccurrences(of: "playlist_", with: "")) {
+                                            let anchor: UnitPoint = (idx == 0) ? .leading : (idx == playlists.count - 1 ? .trailing : .center)
+                                            withAnimation(.easeInOut(duration: 0.28)) {
+                                                playlistProxy.scrollTo(newId, anchor: anchor)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .id("section_playlists")
+                        }
+
+                        // MARK: - 新歌推荐 (双列 Apple Music 排版)
+                        if !newSongs.isEmpty {
+                            VStack(alignment: .leading, spacing: 14) {
+                                sectionHeader("新歌速递")
+                                LazyVGrid(columns: songColumns, spacing: 4) {
+                                    ForEach(Array(newSongs.prefix(12).enumerated()), id: \.offset) { idx, song in
+                                        Button {
+                                            focusedId = "song_\(idx)"
+                                            player.play(song)
+                                        } label: {
+                                            NewSongRow(
+                                                song: song,
+                                                index: idx + 1,
+                                                isFocused: focusedId == "song_\(idx)"
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                        .id("song_\(idx)")
+                                        .focused($focusedId, equals: "song_\(idx)")
+                                        .focusEffectDisabled()
                                     }
                                 }
                                 .padding(.horizontal, 28)
                             }
+                            .id("section_newSongs")
                         }
                     }
 
-                    // MARK: - 新歌推荐 (双列 Apple Music 排版)
-                    if !newSongs.isEmpty {
-                        VStack(alignment: .leading, spacing: 14) {
-                            sectionHeader("新歌速递")
-                            LazyVGrid(columns: songColumns, spacing: 4) {
-                                ForEach(Array(newSongs.prefix(12).enumerated()), id: \.element.id) { idx, song in
-                                    NewSongRow(song: song, index: idx + 1)
-                                }
-                            }
-                            .padding(.horizontal, 28)
-                        }
+                    Spacer(minLength: 90)
+                }
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .onChange(of: focusedId) { _, newId in
+                guard let newId else { return }
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    if newId.hasPrefix("banner_") {
+                        verticalProxy.scrollTo("section_banners", anchor: .top)
+                    } else if newId.hasPrefix("playlist_") {
+                        verticalProxy.scrollTo("section_playlists", anchor: .center)
+                    } else if newId.hasPrefix("song_") {
+                        verticalProxy.scrollTo(newId, anchor: .center)
                     }
                 }
-
-                Spacer(minLength: 90)
+            }
+            .onKeyPress(.rightArrow) { moveFocus(direction: .right) }
+            .onKeyPress(.leftArrow) { moveFocus(direction: .left) }
+            .onKeyPress(.downArrow) { moveFocus(direction: .down) }
+            .onKeyPress(.upArrow) { moveFocus(direction: .up) }
+            .onKeyPress(.return) { activateFocusedItem(playOnly: false) }
+            .onKeyPress(.space) { activateFocusedItem(playOnly: true) }
+            .onKeyPress(.escape) {
+                focusedId = nil
+                return .handled
             }
         }
         .task { await loadData() }
+    }
+
+    // MARK: - Keyboard Navigation (方向键与回车流畅切换与滚动)
+
+    enum FocusDirection {
+        case left, right, up, down
+    }
+
+    private func moveFocus(direction: FocusDirection) -> KeyPress.Result {
+        guard let current = focusedId else {
+            // 没有当前焦点时，自动激活首个可用元素
+            if !banners.isEmpty {
+                focusedId = "banner_0"
+                return .handled
+            } else if !playlists.isEmpty {
+                focusedId = "playlist_0"
+                return .handled
+            } else if !newSongs.isEmpty {
+                focusedId = "song_0"
+                return .handled
+            }
+            return .ignored
+        }
+
+        if current.hasPrefix("banner_") {
+            guard let idx = Int(current.replacingOccurrences(of: "banner_", with: "")) else { return .ignored }
+
+            switch direction {
+            case .right:
+                if idx + 1 < banners.count {
+                    focusedId = "banner_\(idx + 1)"
+                    return .handled
+                }
+            case .left:
+                if idx - 1 >= 0 {
+                    focusedId = "banner_\(idx - 1)"
+                    return .handled
+                }
+            case .down:
+                if !playlists.isEmpty {
+                    // 下移保持相对列位置
+                    let targetIdx = min(idx, playlists.count - 1)
+                    focusedId = "playlist_\(targetIdx)"
+                    return .handled
+                } else if !newSongs.isEmpty {
+                    focusedId = "song_0"
+                    return .handled
+                }
+            case .up:
+                return .ignored
+            }
+        } else if current.hasPrefix("playlist_") {
+            guard let idx = Int(current.replacingOccurrences(of: "playlist_", with: "")) else { return .ignored }
+
+            switch direction {
+            case .right:
+                if idx + 1 < playlists.count {
+                    focusedId = "playlist_\(idx + 1)"
+                    return .handled
+                }
+            case .left:
+                if idx - 1 >= 0 {
+                    focusedId = "playlist_\(idx - 1)"
+                    return .handled
+                }
+            case .up:
+                if !banners.isEmpty {
+                    let targetIdx = min(idx, banners.count - 1)
+                    focusedId = "banner_\(targetIdx)"
+                    return .handled
+                }
+            case .down:
+                if !newSongs.isEmpty {
+                    let targetIdx = min(idx % 2, min(newSongs.count - 1, 11))
+                    focusedId = "song_\(targetIdx)"
+                    return .handled
+                }
+            }
+        } else if current.hasPrefix("song_") {
+            guard let idx = Int(current.replacingOccurrences(of: "song_", with: "")) else { return .ignored }
+            let maxSongs = min(newSongs.count, 12)
+
+            switch direction {
+            case .right:
+                if idx % 2 == 0 && idx + 1 < maxSongs {
+                    focusedId = "song_\(idx + 1)"
+                    return .handled
+                }
+            case .left:
+                if idx % 2 == 1 {
+                    focusedId = "song_\(idx - 1)"
+                    return .handled
+                }
+            case .up:
+                if idx - 2 >= 0 {
+                    focusedId = "song_\(idx - 2)"
+                    return .handled
+                } else if !playlists.isEmpty {
+                    focusedId = "playlist_0"
+                    return .handled
+                }
+            case .down:
+                if idx + 2 < maxSongs {
+                    focusedId = "song_\(idx + 2)"
+                    return .handled
+                }
+            }
+        }
+
+        return .ignored
+    }
+
+    private func activateFocusedItem(playOnly: Bool) -> KeyPress.Result {
+        guard let current = focusedId else { return .ignored }
+
+        if current.hasPrefix("banner_") {
+            if let idx = Int(current.replacingOccurrences(of: "banner_", with: "")),
+               idx >= 0 && idx < banners.count {
+                handleBannerClick(banners[idx])
+                return .handled
+            }
+        } else if current.hasPrefix("playlist_") {
+            if let idx = Int(current.replacingOccurrences(of: "playlist_", with: "")),
+               idx >= 0 && idx < playlists.count {
+                let pl = playlists[idx]
+                if playOnly {
+                    playPlaylist(pl)
+                } else {
+                    selection = "playlist_\(pl.id)"
+                }
+                return .handled
+            }
+        } else if current.hasPrefix("song_") {
+            if let idx = Int(current.replacingOccurrences(of: "song_", with: "")),
+               idx >= 0 && idx < min(newSongs.count, 12) {
+                let song = newSongs[idx]
+                if playOnly && player.currentSong?.id == song.id {
+                    player.togglePlay()
+                } else {
+                    player.play(song)
+                }
+                return .handled
+            }
+        }
+        return .ignored
+    }
+
+    private func playPlaylist(_ playlist: APIPlaylist) {
+        Task {
+            do {
+                let songs = try await NetworkManager.shared.playlistTracks(id: playlist.id, limit: 50)
+                if !songs.isEmpty {
+                    await MainActor.run {
+                        player.playAll(songs)
+                    }
+                }
+            } catch {
+                print("加载歌单失败: \(error)")
+            }
+        }
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -258,7 +502,9 @@ struct HomeView: View {
 
 struct FeaturedBannerCard: View {
     let banner: APIBanner
+    var isFocused: Bool = false
     var onSelect: (() -> Void)? = nil
+    @Environment(ThemeManager.self) private var themeManager
     @State private var isHovering = false
     @State private var isLoading = false
 
@@ -270,7 +516,7 @@ struct FeaturedBannerCard: View {
                 if let type = banner.typeTitle, !type.isEmpty {
                     Text(type)
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(themeManager.accentColor)
                         .textCase(.uppercase)
                 }
 
@@ -292,17 +538,25 @@ struct FeaturedBannerCard: View {
                     }
                     .frame(width: 380, height: 180)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(themeManager.accentColor, lineWidth: isFocused ? 2.5 : 0)
+                    )
 
-                    // 悬停时或加载时的操作指示器
-                    if isHovering || isLoading {
+                    // 悬停时、获取焦点时或加载时的操作指示器
+                    if isHovering || isFocused || isLoading {
                         badgeView
                             .padding(12)
                             .transition(.opacity.combined(with: .scale(scale: 0.85)))
                     }
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 12))
-                .shadow(color: .black.opacity(isHovering ? 0.22 : 0.1), radius: isHovering ? 12 : 8, y: 4)
-                .scaleEffect(isHovering ? 1.02 : 1.0)
+                .shadow(
+                    color: isFocused ? themeManager.accentColor.opacity(0.4) : .black.opacity(isHovering ? 0.22 : 0.1),
+                    radius: isFocused ? 14 : (isHovering ? 12 : 8),
+                    y: isFocused ? 2 : 4
+                )
+                .scaleEffect((isHovering || isFocused) ? 1.02 : 1.0)
             }
         }
         .buttonStyle(.plain)
@@ -335,10 +589,10 @@ struct FeaturedBannerCard: View {
                     .controlSize(.small)
             }
         } else if banner.targetType == 1 {
-            // 单曲：显示粉色播放图标
+            // 单曲：显示主题色播放图标
             ZStack {
                 Circle()
-                    .fill(.pink)
+                    .fill(themeManager.accentColor)
                     .frame(width: 36, height: 36)
                     .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 Image(systemName: "play.fill")
@@ -393,8 +647,10 @@ struct FeaturedBannerCard: View {
 
 struct PlaylistCard: View {
     let playlist: APIPlaylist
+    var isFocused: Bool = false
     var onSelect: (() -> Void)? = nil
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var isHovering = false
     @State private var isPlayHovering = false
     @State private var isLoadingSongs = false
@@ -417,19 +673,27 @@ struct PlaylistCard: View {
                     }
                     .frame(width: 170, height: 170)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(themeManager.accentColor, lineWidth: isFocused ? 2.5 : 0)
+                    )
                 }
                 .buttonStyle(.plain)
-                .shadow(color: .black.opacity(isHovering ? 0.18 : 0.1), radius: isHovering ? 10 : 6, y: 4)
-                .scaleEffect(isHovering ? 1.03 : 1.0)
+                .shadow(
+                    color: isFocused ? themeManager.accentColor.opacity(0.4) : .black.opacity(isHovering ? 0.18 : 0.1),
+                    radius: isFocused ? 12 : (isHovering ? 10 : 6),
+                    y: isFocused ? 2 : 4
+                )
+                .scaleEffect((isHovering || isFocused) ? 1.03 : 1.0)
 
-                // 悬停时显示快捷播放按钮 (顶层独立 Button，点击仅播放歌曲)
-                if isHovering {
+                // 悬停时或获得焦点时显示快捷播放按钮 (顶层独立 Button，点击仅播放歌曲)
+                if isHovering || isFocused {
                     Button {
                         loadAndPlay()
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(.pink)
+                                .fill(themeManager.accentColor)
                                 .frame(width: 38, height: 38)
                                 .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
 
@@ -514,7 +778,9 @@ struct PlaylistCard: View {
 struct NewSongRow: View {
     let song: APISong
     let index: Int
+    var isFocused: Bool = false
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var isHovered = false
 
     var body: some View {
@@ -526,7 +792,7 @@ struct NewSongRow: View {
                 if isCurrent {
                     Image(systemName: player.isPlaying ? "speaker.wave.2.fill" : "pause.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(themeManager.accentColor)
                 } else if isHovered {
                     Image(systemName: "play.fill")
                         .font(.system(size: 10))
@@ -562,7 +828,7 @@ struct NewSongRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(song.name)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isCurrent ? .pink : .primary)
+                    .foregroundStyle(isCurrent ? themeManager.accentColor : .primary)
                     .lineLimit(1)
 
                 Text(song.displayArtist)
@@ -579,7 +845,7 @@ struct NewSongRow: View {
                 } label: {
                     Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
                         .font(.system(size: 12))
-                        .foregroundStyle(player.isLiked(song.id) ? .pink : .secondary)
+                        .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 10)
@@ -592,14 +858,21 @@ struct NewSongRow: View {
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 10)
-        .background(isHovered ? Color.primary.opacity(0.05) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isFocused ? themeManager.accentColor.opacity(0.14) : (isHovered ? Color.primary.opacity(0.05) : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(themeManager.accentColor, lineWidth: isFocused ? 1.5 : 0)
+        )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .onTapGesture { player.play(song) }
     }
 }
 
 #Preview {
     HomeView()
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
 }

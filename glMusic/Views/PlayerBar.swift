@@ -34,6 +34,7 @@ struct PlayerBar: View {
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
         .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
+        .focusEffectDisabled()
     }
 
     // MARK: - Song Info (Left)
@@ -305,5 +306,6 @@ struct ProgressSlider: View {
 #Preview {
     PlayerBar()
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
         .frame(width: 800)
 }

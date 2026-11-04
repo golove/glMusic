@@ -243,5 +243,6 @@ struct ArtistDetailView: View {
         isPreview: true
     )
     .environment(PlayerManager())
+    .environment(ThemeManager.shared)
     .frame(width: 1100, height: 720)
 }

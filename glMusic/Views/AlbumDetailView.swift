@@ -248,4 +248,5 @@ struct AlbumDetailView: View {
 #Preview {
     AlbumDetailView(albumId: 32311)
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
 }

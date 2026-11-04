@@ -19,8 +19,14 @@ struct LyricsView: View {
 
     var body: some View {
         ZStack{
-            // Blurred Artwork Background (使用 GeometryReader 严格贴合窗口大小，防止图片撑大窗口)
+            // Blurred Artwork Background (使用 GeometryReader
+          
+            
+            // 严格贴合窗口大小，防止图片撑大窗口)
             backgroundArtwork
+            
+            // 主题流光氛围背景 (优雅通透，自适应随主题平滑渐变)
+            NightBokehBackground()
 
             // Main Content
             VStack(spacing: 0) {
@@ -37,9 +43,9 @@ struct LyricsView: View {
 
                     // 根据窗口宽度和高度动态计算封面大小
                     let coverSize = min(
-                        availableWidth * 0.38,
-                        max(180, availableHeight * 0.55),
-                        420
+                        availableWidth * 0.28,
+                        max(180, availableHeight * 0.45),
+                        320
                     )
 
                     HStack(alignment: .top, spacing: 24) {
@@ -138,7 +144,7 @@ struct LyricsView: View {
     private func leftArtSection(coverSize: CGFloat) -> some View {
         @Bindable var player = player
 
-        return VStack( spacing: 12) {
+        return VStack(spacing: 12) {
             if let song = player.currentSong {
                 Group {
                     if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
@@ -168,6 +174,7 @@ struct LyricsView: View {
                 .frame(width: coverSize, height: coverSize)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
+                .padding(.top,-90)
 
                 // 歌曲信息
                 VStack(alignment: .leading, spacing: 3) {
@@ -181,7 +188,7 @@ struct LyricsView: View {
                             player.toggleLike(for: song)
                         } label: {
                             Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
-                                .font(.system(size: 18))
+                                .font(.system(size: 22))
                                 .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .white.opacity(0.6))
                         }
                         .buttonStyle(.plain)
@@ -217,7 +224,7 @@ struct LyricsView: View {
                     }
                 }
                 .frame(width: coverSize + 80)
-                .padding(.top, 2)
+                
 
                 HStack(spacing: (coverSize-90)/4) {
                     Button { player.toggleShuffle() } label: {
@@ -265,8 +272,9 @@ struct LyricsView: View {
         }
         
         .frame(width: coverSize + 80)
-        .frame(maxHeight: .infinity, alignment: .center)
+        .frame(maxHeight: .infinity)
         .padding(.bottom, 20)
+        .padding(.horizontal,20)
 //        .background(Color.pink)
 //        .frame(width: leftColumnWidth+90,alignment: .trailing)
 
@@ -304,7 +312,7 @@ struct LyricsView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(line.text)
-                                    .font(.system(size: isActive ? 20 : 16, weight: isActive ? .bold : .medium))
+                                    .font(.system(size: isActive ? 32 : 28, weight: isActive ? .bold : .medium))
                                     .foregroundStyle(
                                         isActive
                                             ? Color.white
@@ -389,5 +397,6 @@ struct LyricsView: View {
 
     LyricsView()
         .environment(player)
+        .environment(ThemeManager.shared)
         .frame(width: 900, height: 760)
 }

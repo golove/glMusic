@@ -171,4 +171,5 @@ struct FlowLayout: Layout {
 #Preview {
     SearchView()
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
 }

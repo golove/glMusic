@@ -199,5 +199,6 @@ struct PlaylistDetailView: View {
 #Preview {
     PlaylistDetailView(playlistId: 1)
         .environment(PlayerManager())
+        .environment(ThemeManager.shared)
         .frame(height: 800)
 }

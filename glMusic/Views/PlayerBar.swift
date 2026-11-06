@@ -128,7 +128,7 @@ struct PlayerBar: View {
                         .overlay(content: {
                             if isHovering{
                                 Image(systemName: "arrow.down.left.and.arrow.up.right")
-                                .font(.system(size: 24))
+                                .font(.system(size: 18))
                                     
                              
                              }

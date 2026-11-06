@@ -146,19 +146,19 @@ struct UnifiedSongRow: View {
             Button {
                 player.play(song)
             } label: {
-                Label("立即播放", systemImage: "play.fill")
+                Label("立即播放".localized, systemImage: "play.fill")
             }
 
             Button {
                 player.playNext(song)
             } label: {
-                Label("下一首播放", systemImage: "text.insert")
+                Label("下一首播放".localized, systemImage: "text.insert")
             }
 
             Button {
                 player.addToPlaylist(song)
             } label: {
-                Label("添加到播放列表", systemImage: "text.badge.plus")
+                Label("添加到播放列表".localized, systemImage: "text.badge.plus")
             }
 
             Divider()
@@ -167,19 +167,19 @@ struct UnifiedSongRow: View {
                 Button {
                     DownloadManager.shared.revealInFinder(song.id)
                 } label: {
-                    Label("在访达中显示", systemImage: "folder")
+                    Label("在访达中显示".localized, systemImage: "folder")
                 }
 
                 Button(role: .destructive) {
                     DownloadManager.shared.deleteDownload(song.id)
                 } label: {
-                    Label("删除已下载文件", systemImage: "trash")
+                    Label("删除已下载文件".localized, systemImage: "trash")
                 }
             } else {
                 Button {
                     DownloadManager.shared.downloadSong(song)
                 } label: {
-                    Label("下载歌曲", systemImage: "arrow.down.circle")
+                    Label("下载歌曲".localized, systemImage: "arrow.down.circle")
                 }
             }
 
@@ -188,7 +188,7 @@ struct UnifiedSongRow: View {
             Button {
                 player.toggleLike(for: song)
             } label: {
-                Label(player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌",
+                Label((player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌").localized,
                       systemImage: player.isLiked(song.id) ? "heart.slash" : "heart")
             }
         }

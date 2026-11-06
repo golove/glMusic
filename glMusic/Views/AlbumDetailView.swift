@@ -30,14 +30,14 @@ struct AlbumDetailView: View {
                    
 
                 if isLoading {
-                    ProgressView("加载专辑中...")
+                    ProgressView("加载专辑中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else if songs.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "music.note")
                             .font(.system(size: 36))
                             .foregroundStyle(.tertiary)
-                        Text("暂无歌曲数据")
+                        Text("暂无歌曲数据".localized)
                             .font(.headline)
                             .foregroundStyle(.secondary)
                     }
@@ -64,15 +64,15 @@ struct AlbumDetailView: View {
                     // Album Description & Release info
                     if let desc = album?.description, !desc.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("专辑介绍")
+                            Text("专辑介绍".localized)
                                 .font(.headline)
 
-                            Text(desc)
+                            Text(desc.localized)
                                 .font(.system(size: 13))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(isShowingFullDesc ? nil : 4)
 
-                            Button(isShowingFullDesc ? "收起" : "更多") {
+                            Button((isShowingFullDesc ? "收起" : "更多").localized) {
                                 isShowingFullDesc.toggle()
                             }
                             .buttonStyle(.plain)
@@ -84,7 +84,7 @@ struct AlbumDetailView: View {
                     }
 
                     if let pubDate = album?.publishDateText, !pubDate.isEmpty {
-                        Text("发行于 \(pubDate)")
+                        Text("发行于 %@".localized(with: pubDate))
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 24)
@@ -124,7 +124,7 @@ struct AlbumDetailView: View {
             .padding(.horizontal , 6)
             .buttonStyle(.plain)
             .keyboardShortcut("[", modifiers: [.command])
-            .help("返回 (⌘[)")
+            .help("返回 (⌘[)".localized)
             
  
         
@@ -152,12 +152,12 @@ struct AlbumDetailView: View {
 
             // Info
             VStack(alignment: .leading, spacing: 6) {
-                Text("专辑")
+                Text("专辑".localized)
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
 
-                Text(album?.name ?? "专辑")
+                Text(album?.name ?? "专辑".localized)
                     .font(.system(size: 26, weight: .bold))
                     .lineLimit(2)
 
@@ -172,10 +172,10 @@ struct AlbumDetailView: View {
                         Text(year)
                     }
                     if let size = album?.size, size > 0 {
-                        Text("· \(size) 首歌曲")
+                        Text("· %d 首歌曲".localized(with: size))
                     }
                     if let company = album?.company, !company.isEmpty {
-                        Text("· \(company)")
+                        Text("· \(company)".localized)
                     }
                 }
                 .font(.system(size: 12))
@@ -186,9 +186,9 @@ struct AlbumDetailView: View {
                 // Actions (Play all & Shuffle & Download)
                 PlaybackActionBar(
                     songs: songs,
-                    playTitle: "播放全部",
-                    downloadTitle: "下载专辑",
-                    downloadHelpText: "下载此专辑全部歌曲到本地"
+                    playTitle: "播放全部".localized,
+                    downloadTitle: "下载专辑".localized,
+                    downloadHelpText: "下载此专辑全部歌曲到本地".localized
                 )
 
                 .padding(.bottom, 20)
@@ -214,8 +214,8 @@ struct AlbumDetailView: View {
                     // Column headers
                     HStack(spacing: 0) {
                         Text("#").frame(width: 36, alignment: .center)
-                        Text("标题").frame(maxWidth: .infinity, alignment: .leading)
-                        Text("艺人").frame(width: 160, alignment: .leading)
+                        Text("标题".localized).frame(maxWidth: .infinity, alignment: .leading)
+                        Text("艺人".localized).frame(width: 160, alignment: .leading)
                         Image(systemName: "clock").frame(width: 60, alignment: .trailing)
                     }
                     .font(.system(size: 11, weight: .medium))

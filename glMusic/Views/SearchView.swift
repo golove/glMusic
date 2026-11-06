@@ -18,7 +18,7 @@ struct SearchView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Title
-            Text("搜索")
+            Text("搜索".localized)
                 .font(.largeTitle.bold())
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
@@ -27,7 +27,7 @@ struct SearchView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索歌曲、艺人、专辑", text: $searchText)
+                TextField("搜索歌曲、艺人、专辑".localized, text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .onSubmit { performSearch() }
@@ -57,7 +57,7 @@ struct SearchView: View {
             if searchText.isEmpty {
                 // Hot searches
                 if !hotSearches.isEmpty {
-                    Text("热门搜索")
+                    Text("热门搜索".localized)
                         .font(.title3.bold())
                         .padding(.horizontal, 24)
 
@@ -83,7 +83,7 @@ struct SearchView: View {
                     Spacer()
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 36)).foregroundStyle(.tertiary)
-                    Text("没有找到结果")
+                    Text("没有找到结果".localized)
                         .font(.headline).foregroundStyle(.secondary)
                     Spacer()
                 }

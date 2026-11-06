@@ -22,16 +22,16 @@ struct BrowseView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("浏览")
+                Text("浏览".localized)
                     .font(.largeTitle.bold())
                     .padding(.horizontal, 24)
                     .padding(.top, 12)
 
                 if isLoading {
-                    ProgressView("加载中...")
+                    ProgressView("加载中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
-                    Text("排行榜")
+                    Text("排行榜".localized)
                         .font(.title2.bold())
                         .padding(.horizontal, 24)
 

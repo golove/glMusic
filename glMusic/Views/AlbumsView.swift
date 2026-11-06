@@ -22,11 +22,11 @@ struct AlbumsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .lastTextBaseline) {
-                    Text("专辑")
+                    Text("专辑".localized)
                         .font(.largeTitle.bold())
                     Spacer()
                     if !albums.isEmpty {
-                        Text("\(albums.count) 张新碟")
+                        Text(String(format: "%d 张新碟".localized, albums.count))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -35,7 +35,7 @@ struct AlbumsView: View {
                 .padding(.top, 12)
 
                 if isLoading {
-                    ProgressView("加载中...")
+                    ProgressView("加载中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
                     LazyVGrid(columns: columns, spacing: 24) {

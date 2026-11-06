@@ -17,9 +17,9 @@ struct QueueView: View {
             // Header
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("待播清单")
+                    Text("待播清单".localized)
                         .font(.system(size: 15, weight: .bold))
-                    Text("\(player.playlist.count) 首歌曲")
+                    Text(String(format: "%d 首歌曲".localized, player.playlist.count))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -27,7 +27,7 @@ struct QueueView: View {
                 Spacer()
 
                 if !player.playlist.isEmpty {
-                    Button("清空") {
+                    Button("清空".localized) {
                         player.clearPlaylist()
                     }
                     .buttonStyle(.plain)
@@ -58,7 +58,7 @@ struct QueueView: View {
                     Image(systemName: "music.note.list")
                         .font(.system(size: 32))
                         .foregroundStyle(.tertiary)
-                    Text("清单为空")
+                    Text("清单为空".localized)
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                     Spacer()

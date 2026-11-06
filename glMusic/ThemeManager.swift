@@ -18,6 +18,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var localizedName: String {
+        rawValue.localized
+    }
+
     var englishName: String {
         switch self {
         case .sakura:   return "Sakura Pink"

@@ -36,7 +36,7 @@ struct DailyRecommendView: View {
                   
 
                     if isLoading {
-                        ProgressView("加载每日推荐...")
+                        ProgressView("加载每日推荐...".localized)
                             .frame(maxWidth: .infinity, minHeight: 200)
                         
                       
@@ -49,7 +49,7 @@ struct DailyRecommendView: View {
                             Text(error)
                                 .font(.headline)
                                 .foregroundStyle(.secondary)
-                            Text("每日推荐需要登录网易云音乐账号")
+                            Text("每日推荐需要登录网易云音乐账号".localized)
                                 .font(.subheadline)
                                 .foregroundStyle(.tertiary)
                         }
@@ -59,7 +59,7 @@ struct DailyRecommendView: View {
                             Image(systemName: "music.note")
                                 .font(.system(size: 36))
                                 .foregroundStyle(.tertiary)
-                            Text("暂无推荐歌曲")
+                            Text("暂无推荐歌曲".localized)
                                 .font(.headline)
                                 .foregroundStyle(.secondary)
                         }
@@ -94,9 +94,9 @@ struct DailyRecommendView: View {
                 // Column headers
                 HStack(spacing: 0) {
                     Text("#").frame(width: 36, alignment: .center)
-                    Text("标题").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("艺人").frame(width: 160, alignment: .leading)
-                    Text("专辑").frame(width: 160, alignment: .leading)
+                    Text("标题".localized).frame(maxWidth: .infinity, alignment: .leading)
+                    Text("艺人".localized).frame(width: 160, alignment: .leading)
+                    Text("专辑".localized).frame(width: 160, alignment: .leading)
                     Image(systemName: "clock").frame(width: 60, alignment: .trailing)
                 }
                 .font(.system(size: 11, weight: .medium))
@@ -139,15 +139,15 @@ struct DailyRecommendView: View {
 
             // Info
             VStack(alignment: .leading, spacing: 6) {
-                Text("专属推荐")
+                Text("专属推荐".localized)
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
 
-                Text("每日推荐")
+                Text("每日推荐".localized)
                     .font(.system(size: 28, weight: .bold))
 
-                Text("符合你口味的专属歌单 · 每日 6:00 更新")
+                Text("符合你口味的专属歌单 · 每日 6:00 更新".localized)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                 
@@ -156,8 +156,8 @@ struct DailyRecommendView: View {
                 // Action: Play all & Download
                 PlaybackActionBar(
                     songs: songs,
-                    playTitle: "播放全部",
-                    downloadHelpText: "下载全部推荐歌曲到本地"
+                    playTitle: "播放全部".localized,
+                    downloadHelpText: "下载全部推荐歌曲到本地".localized
                 )
                 .padding(.bottom, 12)
             }
@@ -171,13 +171,13 @@ struct DailyRecommendView: View {
         errorMessage = nil
         do {
             if !NetworkManager.shared.isLoggedIn {
-                errorMessage = "请先登录账号"
+                errorMessage = "请先登录账号".localized
             } else {
                 songs = try await NetworkManager.shared.dailyRecommendSongs()
             }
         } catch {
             print("加载每日推荐失败: \(error)")
-            errorMessage = "获取每日推荐失败，请确认是否已登录"
+            errorMessage = "获取每日推荐失败，请确认是否已登录".localized
         }
         isLoading = false
     }
@@ -187,4 +187,5 @@ struct DailyRecommendView: View {
     DailyRecommendView()
         .environment(PlayerManager())
         .environment(ThemeManager.shared)
+        .environment(LanguageManager.shared)
 }

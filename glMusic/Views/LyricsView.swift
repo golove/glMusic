@@ -55,13 +55,14 @@ struct LyricsView: View {
 
                     HStack(alignment: .top, spacing: 24) {
                         leftArtSection(coverSize: coverSize)
-                            .frame(width: coverSize + 80)
-                            .padding(.leading,availableWidth*0.096)
+                            
+//                            .padding(.leading, if availableWidth*0.056)
+//                            .background(Color.red)
 
                         rightLyricsSection
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .padding(.horizontal, 40)
+//                    .padding(.horizontal, 40)
                     .frame(
                         maxWidth: .infinity,
                         maxHeight: .infinity
@@ -87,10 +88,7 @@ struct LyricsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(
-            minWidth: 960,maxWidth: .infinity,
-            minHeight: 620, maxHeight: .infinity
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Background Artwork
@@ -111,6 +109,7 @@ struct LyricsView: View {
                             .blur(radius: 65)
                             .scaleEffect(1.15)
                             .opacity(0.48)
+                            .drawingGroup()
                     } else if let url = URL(string: song.coverUrl ?? "") {
                         AsyncImage(url: url) { phase in
                             switch phase {
@@ -122,6 +121,7 @@ struct LyricsView: View {
                                     .blur(radius: 65)
                                     .scaleEffect(1.15)
                                     .opacity(0.48)
+                                    .drawingGroup()
                             default:
                                 Color.clear
                             }
@@ -176,10 +176,10 @@ struct LyricsView: View {
                     }
                 }
                 .background(Color.clear)
-                .frame(width: coverSize, height: coverSize)
+                .frame(width: coverSize+20, height: coverSize+20)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
-                .padding(.top,-90)
+                .padding(.top,-120)
 
                 // 歌曲信息
                 VStack(alignment: .leading, spacing: 3) {
@@ -236,7 +236,7 @@ struct LyricsView: View {
                     }
                 }
                 .frame(width: coverSize + 80, alignment: .leading)
-                .padding(.top, 30)
+                .padding(.top, 20)
 
                 // 进度条控制
                 VStack(spacing: 4) {
@@ -295,15 +295,15 @@ struct LyricsView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .frame(width: coverSize+80)
+//                .frame(width: coverSize+80)
             }
                
         }
         
-        .frame(width: coverSize + 80)
+        .frame(width: coverSize + 120)
         .frame(maxHeight: .infinity)
         .padding(.bottom, 20)
-        .padding(.horizontal,20)
+//        .padding(.horizontal,20)
 //        .background(Color.pink)
 //        .frame(width: leftColumnWidth+90,alignment: .trailing)
 
@@ -319,7 +319,7 @@ struct LyricsView: View {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("正在加载歌词...")
+                            Text("正在加载歌词...".localized)
                                 .font(.system(size: 14))
                                 .foregroundStyle(.white.opacity(0.6))
                         }
@@ -329,7 +329,7 @@ struct LyricsView: View {
                             Image(systemName: "quote.bubble")
                                 .font(.system(size: 36))
                                 .foregroundStyle(.white.opacity(0.3))
-                            Text("纯音乐，请欣赏")
+                            Text("纯音乐，请欣赏".localized)
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.6))
                         }
@@ -401,7 +401,7 @@ struct LyricsView: View {
                 player.isShowingLyrics.toggle()
             }label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "chevron.left")
+                    Image(systemName: "chevron.down")
                         .font(.system(size: 14, weight: .bold))
    
                 }
@@ -413,7 +413,7 @@ struct LyricsView: View {
             .padding(.horizontal , 6)
             .buttonStyle(.plain)
             .keyboardShortcut(.escape, modifiers: [])
-            .help("返回 (Esc)")
+            .help("返回 (Esc)".localized)
             
  
         

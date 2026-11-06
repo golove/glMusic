@@ -16,6 +16,10 @@ struct LoginView: View {
     enum LoginTab: String, CaseIterable {
         case qrcode = "扫码登录"
         case sms    = "短信登录"
+
+        var title: String {
+            rawValue.localized
+        }
     }
     @State private var selectedTab: LoginTab = .sms
 
@@ -24,7 +28,7 @@ struct LoginView: View {
             // Title
             HStack {
                 Spacer()
-                Text("登录网易云音乐")
+                Text("登录网易云音乐".localized)
                     .font(.title2.bold())
                 Spacer()
             }
@@ -34,7 +38,7 @@ struct LoginView: View {
             // Tab Picker
             Picker("", selection: $selectedTab) {
                 ForEach(LoginTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(tab.title).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -55,13 +59,39 @@ struct LoginView: View {
 
 // MARK: - QR Code Login
 
+enum QRLoginStatus {
+    case generating
+    case scanPrompt
+    case scanned
+    case expired
+    case success
+    case failure(String)
+
+    var displayText: String {
+        switch self {
+        case .generating:
+            return "正在生成二维码...".localized
+        case .scanPrompt:
+            return "请用网易云音乐 App 扫码登录".localized
+        case .scanned:
+            return "已扫码，请在手机上点击确认 ✓".localized
+        case .expired:
+            return "二维码已过期，请点击刷新".localized
+        case .success:
+            return "登录成功！".localized
+        case .failure(let msg):
+            return msg.localized
+        }
+    }
+}
+
 struct QRLoginContent: View {
     var onSuccess: ((UserProfile) -> Void)?
     var dismiss: DismissAction
 
     @State private var qrKey = ""
     @State private var qrImage: NSImage?
-    @State private var statusMessage = "正在生成二维码..."
+    @State private var status: QRLoginStatus = .generating
     @State private var qrExpired = false
     @State private var loginSuccess = false
     @State private var pollingTask: Task<Void, Never>?
@@ -87,7 +117,7 @@ struct QRLoginContent: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.title2)
                                 .foregroundStyle(.white)
-                            Text("已过期")
+                            Text("已过期".localized)
                                 .font(.caption.bold())
                                 .foregroundStyle(.white)
                         }
@@ -107,24 +137,24 @@ struct QRLoginContent: View {
                 }
             }
 
-            Text(statusMessage)
+            Text(status.displayText)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 14) {
                 if loginSuccess {
-                    Button("完成") { dismiss() }
+                    Button("完成".localized) { dismiss() }
                         .buttonStyle(.borderedProminent)
                         .tint(.pink)
                 } else {
-                    Button("刷新二维码") {
+                    Button("刷新二维码".localized) {
                         Task { await generateQR() }
                     }
                     .buttonStyle(.bordered)
                     .disabled(!qrExpired && qrImage != nil)
 
-                    Button("取消") {
+                    Button("取消".localized) {
                         pollingTask?.cancel()
                         dismiss()
                     }
@@ -147,7 +177,7 @@ struct QRLoginContent: View {
         qrImage = nil
         qrExpired = false
         loginSuccess = false
-        statusMessage = "正在生成二维码..."
+        status = .generating
         pollingTask?.cancel()
 
         do {
@@ -164,10 +194,10 @@ struct QRLoginContent: View {
                 qrImage = image
             }
 
-            statusMessage = "请用网易云音乐 App 扫码登录"
+            status = .scanPrompt
             pollingTask = Task { await pollStatus() }
         } catch {
-            statusMessage = "生成二维码失败，请检查 API 服务是否运行"
+            status = .failure("生成二维码失败，请检查 API 服务是否运行")
             print("QR 生成失败: \(error)")
         }
     }
@@ -182,18 +212,18 @@ struct QRLoginContent: View {
 
                 switch result.code {
                 case 800:
-                    statusMessage = "二维码已过期，请点击刷新"
+                    status = .expired
                     qrExpired = true
                     return
                 case 801:
-                    statusMessage = "请用网易云音乐 App 扫码登录"
+                    status = .scanPrompt
                 case 802:
-                    statusMessage = "已扫码，请在手机上点击确认 ✓"
+                    status = .scanned
                 case 803:
                     if let cookie = result.cookie {
                         NetworkManager.shared.cookie = cookie
                     }
-                    statusMessage = "登录成功！"
+                    status = .success
                     loginSuccess = true
 
                     if let profile = try? await NetworkManager.shared.loginStatus() {
@@ -212,17 +242,52 @@ struct QRLoginContent: View {
 
 // MARK: - SMS Captcha Login
 
+enum SMSLoginStatus {
+    case idle
+    case sendingCode
+    case codeSent(phone: String)
+    case sendCodeFailed(error: String)
+    case loggingIn
+    case success
+    case invalidCaptcha
+    case loginFailed(error: String)
+
+    var displayText: String {
+        switch self {
+        case .idle:
+            return "输入手机号获取验证码".localized
+        case .sendingCode:
+            return "正在发送验证码...".localized
+        case .codeSent(let phone):
+            return "验证码已发送到 %@".localized(with: phone)
+        case .sendCodeFailed(let err):
+            return "发送验证码失败: %@".localized(with: err)
+        case .loggingIn:
+            return "正在登录...".localized
+        case .success:
+            return "登录成功！".localized
+        case .invalidCaptcha:
+            return "登录失败，请检查验证码是否正确".localized
+        case .loginFailed(let err):
+            return "登录失败: %@".localized(with: err)
+        }
+    }
+
+    var isSuccess: Bool {
+        if case .success = self { return true }
+        return false
+    }
+}
+
 struct SMSLoginContent: View {
     var onSuccess: ((UserProfile) -> Void)?
     var dismiss: DismissAction
 
     @State private var phone = ""
     @State private var captcha = ""
-    @State private var statusMessage = "输入手机号获取验证码"
+    @State private var status: SMSLoginStatus = .idle
     @State private var isSendingCode = false
     @State private var isLoggingIn = false
-    @State private var loginSuccess = false
-    @State private var codeSent = false
     @State private var countdown = 0
     @State private var countdownTask: Task<Void, Never>?
 
@@ -243,7 +308,7 @@ struct SMSLoginContent: View {
                     .padding(.vertical, 8)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
 
-                TextField("手机号码", text: $phone)
+                TextField("手机号码".localized, text: $phone)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .padding(10)
@@ -253,7 +318,7 @@ struct SMSLoginContent: View {
 
             // Captcha row
             HStack(spacing: 8) {
-                TextField("验证码", text: $captcha)
+                TextField("验证码".localized, text: $captcha)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .padding(10)
@@ -267,7 +332,7 @@ struct SMSLoginContent: View {
                             .controlSize(.small)
                             .frame(width: 90, height: 36)
                     } else {
-                        Text(countdown > 0 ? "\(countdown)s" : "获取验证码")
+                        Text(countdown > 0 ? "\(countdown)s" : "获取验证码".localized)
                             .font(.system(size: 13, weight: .medium))
                             .frame(width: 90, height: 36)
                     }
@@ -278,15 +343,15 @@ struct SMSLoginContent: View {
             .padding(.horizontal, 30)
 
             // Status message
-            Text(statusMessage)
+            Text(status.displayText)
                 .font(.caption)
-                .foregroundStyle(loginSuccess ? .green : .secondary)
+                .foregroundStyle(status.isSuccess ? .green : .secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 30)
 
             // Login / Done button
-            if loginSuccess {
-                Button("完成") { dismiss() }
+            if status.isSuccess {
+                Button("完成".localized) { dismiss() }
                     .buttonStyle(.borderedProminent)
                     .tint(.pink)
                     .controlSize(.large)
@@ -299,7 +364,7 @@ struct SMSLoginContent: View {
                             ProgressView()
                                 .controlSize(.small)
                         }
-                        Text("登录")
+                        Text("登录".localized)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 36)
@@ -311,7 +376,7 @@ struct SMSLoginContent: View {
                 .disabled(phone.count < 11 || captcha.count < 4 || isLoggingIn)
             }
 
-            Button("取消") {
+            Button("取消".localized) {
                 countdownTask?.cancel()
                 dismiss()
             }
@@ -327,11 +392,10 @@ struct SMSLoginContent: View {
 
     private func sendCode() async {
         isSendingCode = true
-        statusMessage = "正在发送验证码..."
+        status = .sendingCode
         do {
             try await NetworkManager.shared.sendCaptcha(phone: phone)
-            codeSent = true
-            statusMessage = "验证码已发送到 \(phone)"
+            status = .codeSent(phone: phone)
             countdown = 60
             countdownTask?.cancel()
             countdownTask = Task {
@@ -341,7 +405,7 @@ struct SMSLoginContent: View {
                 }
             }
         } catch {
-            statusMessage = "发送验证码失败: \(error.localizedDescription)"
+            status = .sendCodeFailed(error: error.localizedDescription)
             print("发送验证码失败: \(error)")
         }
         isSendingCode = false
@@ -349,21 +413,20 @@ struct SMSLoginContent: View {
 
     private func login() async {
         isLoggingIn = true
-        statusMessage = "正在登录..."
+        status = .loggingIn
         do {
             let cookie = try await NetworkManager.shared.loginWithCaptcha(phone: phone, captcha: captcha)
             if cookie != nil {
-                statusMessage = "登录成功！"
-                loginSuccess = true
+                status = .success
                 // 获取用户信息
                 if let profile = try? await NetworkManager.shared.loginStatus() {
                     onSuccess?(profile)
                 }
             } else {
-                statusMessage = "登录失败，请检查验证码是否正确"
+                status = .invalidCaptcha
             }
         } catch {
-            statusMessage = "登录失败: \(error.localizedDescription)"
+            status = .loginFailed(error: error.localizedDescription)
             print("登录失败: \(error)")
         }
         isLoggingIn = false

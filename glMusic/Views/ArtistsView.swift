@@ -20,11 +20,11 @@ struct ArtistsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .lastTextBaseline) {
-                    Text("艺人")
+                    Text("艺人".localized)
                         .font(.largeTitle.bold())
                     Spacer()
                     if !artists.isEmpty {
-                        Text("热门艺人")
+                        Text("热门艺人".localized)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -33,7 +33,7 @@ struct ArtistsView: View {
                 .padding(.top, 12)
 
                 if isLoading {
-                    ProgressView("加载中...")
+                    ProgressView("加载中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
                     Divider().padding(.horizontal, 24)
@@ -92,7 +92,7 @@ struct APIArtistRow: View {
                 Text(artist.name)
                     .font(.system(size: 15, weight: .medium))
                 if let albums = artist.albumSize {
-                    Text("\(albums) 张专辑")
+                    Text(String(format: "%d 张专辑".localized, albums))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }

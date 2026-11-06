@@ -112,8 +112,11 @@ struct NightBokehBackground: View {
         .allowsHitTesting(false)
         .animation(.easeInOut(duration: 0.35), value: themeManager.currentTheme)
         .onAppear {
-            withAnimation(.easeInOut(duration: 6.5).repeatForever(autoreverses: true)) {
-                isBreathing = true
+            // 延迟启动呼吸动画，避免与页面入场 transition 竞争导致卡顿
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                withAnimation(.easeInOut(duration: 6.5).repeatForever(autoreverses: true)) {
+                    isBreathing = true
+                }
             }
         }
     }

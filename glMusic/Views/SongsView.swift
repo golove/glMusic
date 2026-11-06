@@ -26,10 +26,10 @@ struct SongsView: View {
                 // Header
                 VStack(alignment: .leading) {
                     VStack(alignment: .leading) {
-                        Text("歌曲")
+                        Text("歌曲".localized)
                             .font(.largeTitle.bold())
                         if !songs.isEmpty {
-                            Text("\(songs.count) 首歌曲 · \(chartName)")
+                            Text(String(format: "%d 首歌曲 · %@".localized, songs.count, chartName.localized))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -39,7 +39,7 @@ struct SongsView: View {
                     .padding(.bottom, 16)
 
                     if isLoading {
-                        ProgressView("加载中...")
+                        ProgressView("加载中...".localized)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         if !songs.isEmpty {
@@ -51,9 +51,9 @@ struct SongsView: View {
                         // Column headers
                         HStack(spacing: 0) {
                             Text("#").frame(width: 36, alignment: .center)
-                            Text("标题").frame(maxWidth: .infinity, alignment: .leading)
-                            Text("艺人").frame(width: 160, alignment: .leading)
-                            Text("专辑").frame(width: 160, alignment: .leading)
+                            Text("标题".localized).frame(maxWidth: .infinity, alignment: .leading)
+                            Text("艺人".localized).frame(width: 160, alignment: .leading)
+                            Text("专辑".localized).frame(width: 160, alignment: .leading)
                             Image(systemName: "clock").frame(width: 60, alignment: .trailing)
                         }
                         .font(.system(size: 11, weight: .medium))

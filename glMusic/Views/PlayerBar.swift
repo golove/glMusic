@@ -127,7 +127,7 @@ struct PlayerBar: View {
                         }
                         .overlay(content: {
                             if isHovering{
-                                Image(systemName: "arrow.down.backward.and.arrow.up.forward.rectangle.fill")
+                                Image(systemName: "arrow.down.left.and.arrow.up.right")
                                 .font(.system(size: 24))
                                     
                              
@@ -172,7 +172,7 @@ struct PlayerBar: View {
                     }
                     .frame(width: 28, height: 28)
                     .buttonStyle(.plain)
-                    .help(player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌")
+                    .help((player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌").localized)
 
                     // 下载此歌曲
                     DownloadButton(song: song, iconSize: 13)
@@ -198,7 +198,7 @@ struct PlayerBar: View {
                     
                 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("未在播放")
+                        Text("未在播放".localized)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -249,7 +249,7 @@ struct PlayerBar: View {
                     .foregroundStyle(player.isShowingQueue ? themeManager.accentColor : .secondary)
             }
             .buttonStyle(.plain)
-            .help("待播清单")
+            .help("待播清单".localized)
             .popover(isPresented: $player.isShowingQueue, arrowEdge: .top) {
                 QueueView()
             }

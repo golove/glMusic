@@ -31,14 +31,14 @@ struct RadioDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
 
                     if isLoading {
-                        ProgressView("正在加载电台节目...")
+                        ProgressView("正在加载电台节目...".localized)
                             .frame(maxWidth: .infinity, minHeight: 220)
                     } else if programs.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "dot.radiowaves.left.and.right")
                                 .font(.system(size: 40))
                                 .foregroundStyle(.tertiary)
-                            Text("暂无电台节目")
+                            Text("暂无电台节目".localized)
                                 .font(.headline)
                                 .foregroundStyle(.secondary)
                         }
@@ -66,7 +66,7 @@ struct RadioDetailView: View {
                         // 电台简介与创作者信息
                         if let desc = radio?.displayDesc, !desc.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("电台介绍")
+                                Text("电台介绍".localized)
                                     .font(.headline)
 
                                 Text(desc)
@@ -74,7 +74,7 @@ struct RadioDetailView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(isShowingFullDesc ? nil : 4)
 
-                                Button(isShowingFullDesc ? "收起" : "更多") {
+                                Button((isShowingFullDesc ? "收起" : "更多").localized) {
                                     withAnimation(.easeInOut(duration: 0.15)) {
                                         isShowingFullDesc.toggle()
                                     }
@@ -105,8 +105,8 @@ struct RadioDetailView: View {
                         // 列表表头
                         HStack(spacing: 0) {
                             Text("#").frame(width: 36, alignment: .center)
-                            Text("节目名称").frame(maxWidth: .infinity, alignment: .leading)
-                            Text("收听量").frame(width: 120, alignment: .leading)
+                            Text("节目名称".localized).frame(maxWidth: .infinity, alignment: .leading)
+                            Text("收听量".localized).frame(width: 120, alignment: .leading)
                             Image(systemName: "clock").frame(width: 70, alignment: .trailing)
                             Text("").frame(width: 60)
                         }
@@ -132,7 +132,7 @@ struct RadioDetailView: View {
             HStack(spacing: 4) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .semibold))
-                Text("广播")
+                Text("广播".localized)
                     .font(.system(size: 13, weight: .medium))
             }
             .foregroundStyle(.secondary)
@@ -176,7 +176,7 @@ struct RadioDetailView: View {
                 }
 
                 // 电台名称
-                Text(radio?.name ?? "电台详情")
+                Text(radio?.name ?? "电台详情".localized)
                     .font(.system(size: 22, weight: .bold))
                     .lineLimit(1)
 
@@ -194,7 +194,7 @@ struct RadioDetailView: View {
                             .frame(width: 18, height: 18)
                             .clipShape(Circle())
                         }
-                        Text(dj.nickname ?? "主播")
+                        Text(dj.nickname ?? "主播".localized)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -210,14 +210,14 @@ struct RadioDetailView: View {
                     if let pCount = radio?.programCount, pCount > 0 {
                         Text("·")
                             .foregroundStyle(.tertiary)
-                        Text("\(pCount) 期节目")
+                        Text(String(format: "%d 期节目".localized, pCount))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
                 }
 
                 // 播放控制按钮群
-                PlaybackActionBar(songs: songs, playTitle: "播放全部")
+                PlaybackActionBar(songs: songs, playTitle: "播放全部".localized)
                     .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -356,19 +356,19 @@ struct RadioProgramRow: View {
                 Button {
                     player.play(song)
                 } label: {
-                    Label("立即播放", systemImage: "play.fill")
+                    Label("立即播放".localized, systemImage: "play.fill")
                 }
 
                 Button {
                     player.playNext(song)
                 } label: {
-                    Label("下一首播放", systemImage: "text.insert")
+                    Label("下一首播放".localized, systemImage: "text.insert")
                 }
 
                 Button {
                     player.addToPlaylist(song)
                 } label: {
-                    Label("添加到待播列表", systemImage: "text.badge.plus")
+                    Label("添加到待播列表".localized, systemImage: "text.badge.plus")
                 }
 
                 Divider()
@@ -377,19 +377,19 @@ struct RadioProgramRow: View {
                     Button {
                         DownloadManager.shared.revealInFinder(song.id)
                     } label: {
-                        Label("在访达中显示", systemImage: "folder")
+                        Label("在访达中显示".localized, systemImage: "folder")
                     }
 
                     Button(role: .destructive) {
                         DownloadManager.shared.deleteDownload(song.id)
                     } label: {
-                        Label("删除已下载文件", systemImage: "trash")
+                        Label("删除已下载文件".localized, systemImage: "trash")
                     }
                 } else {
                     Button {
                         DownloadManager.shared.downloadSong(song)
                     } label: {
-                        Label("下载节目", systemImage: "arrow.down.circle")
+                        Label("下载节目".localized, systemImage: "arrow.down.circle")
                     }
                 }
 
@@ -398,7 +398,7 @@ struct RadioProgramRow: View {
                 Button {
                     player.toggleLike(for: song)
                 } label: {
-                    Label(player.isLiked(song.id) ? "取消喜欢" : "喜欢此节目",
+                    Label((player.isLiked(song.id) ? "取消喜欢" : "喜欢此节目").localized,
                           systemImage: player.isLiked(song.id) ? "heart.slash" : "heart")
                 }
             }

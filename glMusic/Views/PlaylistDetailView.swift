@@ -31,14 +31,14 @@ struct PlaylistDetailView: View {
                   
 
                 if isLoading {
-                    ProgressView("加载中...")
+                    ProgressView("加载中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else if songs.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "music.note")
                             .font(.system(size: 36))
                             .foregroundStyle(.tertiary)
-                        Text("歌单暂无歌曲")
+                        Text("歌单暂无歌曲".localized)
                             .font(.headline)
                             .foregroundStyle(.secondary)
                     }
@@ -76,9 +76,9 @@ struct PlaylistDetailView: View {
                             // Column headers
                             HStack(spacing: 0) {
                                 Text("#").frame(width: 36, alignment: .center)
-                                Text("标题").frame(maxWidth: .infinity, alignment: .leading)
-                                Text("艺人").frame(width: 160, alignment: .leading)
-                                Text("专辑").frame(width: 160, alignment: .leading)
+                                Text("标题".localized).frame(maxWidth: .infinity, alignment: .leading)
+                                Text("艺人".localized).frame(width: 160, alignment: .leading)
+                                Text("专辑".localized).frame(width: 160, alignment: .leading)
                                 Image(systemName: "clock").frame(width: 60, alignment: .trailing)
                             }
                             .font(.system(size: 11, weight: .medium))
@@ -115,7 +115,7 @@ struct PlaylistDetailView: View {
             .padding(.horizontal , 6)
             .buttonStyle(.plain)
             .keyboardShortcut("[", modifiers: [.command])
-            .help("返回 (⌘[)")
+            .help("返回 (⌘[)".localized)
 
 
         
@@ -146,12 +146,12 @@ struct PlaylistDetailView: View {
 
             // Info
             VStack(alignment: .leading, spacing: 8) {
-                Text("歌单")
+                Text("歌单".localized)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
 
-                Text(playlist?.name ?? "歌单")
+                Text(playlist?.name ?? "歌单".localized)
                     .font(.title.bold())
                     .lineLimit(2)
 
@@ -163,14 +163,14 @@ struct PlaylistDetailView: View {
                 }
 
                 if let count = playlist?.trackCount {
-                    Text("\(count) 首歌曲")
+                    Text(String(format: "%d 首歌曲".localized, count))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
 
                 // Play all + count
-                PlaybackActionBar(songs: songs, downloadHelpText: "下载此歌单中的全部歌曲到本地")
+                PlaybackActionBar(songs: songs, downloadHelpText: "下载此歌单中的全部歌曲到本地".localized)
                     .padding(.bottom, 20)
             }
             .padding(.top, 8)

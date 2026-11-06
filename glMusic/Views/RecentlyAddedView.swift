@@ -21,13 +21,13 @@ struct RecentlyAddedView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("最近添加")
+                Text("最近添加".localized)
                     .font(.largeTitle.bold())
                     .padding(.horizontal, 24)
                     .padding(.top, 12)
 
                 if isLoading {
-                    ProgressView("加载中...")
+                    ProgressView("加载中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
                     LazyVGrid(columns: columns, spacing: 24) {

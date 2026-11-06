@@ -22,10 +22,10 @@ struct Sidebar: View {
             List(selection: $selection) {
                 ForEach(items) { item in
                     if let children = item.children {
-                        Section(item.name) {
+                        Section(item.name.localized) {
                             ForEach(children) { child in
                                 Label {
-                                    Text(child.name)
+                                    Text(child.name.localized)
                                 } icon: {
                                     Image(systemName: child.systemImage ?? "circle")
                                         .foregroundStyle(themeManager.accentColor)
@@ -35,7 +35,7 @@ struct Sidebar: View {
                         }
                     } else {
                         Label {
-                            Text(item.name)
+                            Text(item.name.localized)
                         } icon: {
                             Image(systemName: item.systemImage ?? "circle")
                                 .foregroundStyle(themeManager.accentColor)
@@ -46,7 +46,7 @@ struct Sidebar: View {
 
                 // MARK: - 我创建的歌单
                 if !userPlaylists.isEmpty {
-                    Section("创建的歌单") {
+                    Section("创建的歌单".localized) {
                         ForEach(userPlaylists) { pl in
                             Label {
                                 Text(pl.name)
@@ -71,7 +71,7 @@ struct Sidebar: View {
 
                 // MARK: - 收藏的歌单
                 if !subscribedPlaylists.isEmpty {
-                    Section("收藏的歌单") {
+                    Section("收藏的歌单".localized) {
                         ForEach(subscribedPlaylists) { pl in
                             Label {
                                 Text(pl.name)
@@ -118,9 +118,31 @@ struct Sidebar: View {
     // MARK: - Bottom User Area
 
     private var userFooter: some View {
-        HStack(spacing: 10) {
-            if let profile = userProfile {
-                // 已登录：显示头像 + 昵称
+        VStack(spacing: 8) {
+            Divider()
+                .opacity(0.4)
+                .padding(.horizontal, -2)
+
+            // 用户信息卡片
+            userProfileCard
+
+            // 快捷工具栏（语言与主题并排对称胶囊）
+            HStack(spacing: 6) {
+                LanguagePickerButton()
+                ThemePickerButton()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .background(.regularMaterial)
+    }
+
+    @ViewBuilder
+    private var userProfileCard: some View {
+        if let profile = userProfile {
+            // 已登录：显示头像 + 昵称 + 网易云标签 + 退出按钮
+            HStack(spacing: 8) {
                 AsyncImage(url: URL(string: profile.avatarUrl ?? "")) { phase in
                     switch phase {
                     case .success(let img):
@@ -129,23 +151,32 @@ struct Sidebar: View {
                         Circle().fill(.blue.gradient)
                             .overlay(
                                 Text(String((profile.nickname ?? "U").prefix(1)))
-                                    .font(.caption.bold())
+                                    .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(.white)
                             )
                     }
                 }
-                .frame(width: 32, height: 32)
+                .frame(width: 30, height: 30)
                 .clipShape(Circle())
+                .overlay(
+                    Circle().stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                )
 
-                Text(profile.nickname ?? "用户")
-                    .font(.headline)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(profile.nickname ?? "用户".localized)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
 
-                Spacer()
+                    Text("网易云音乐".localized)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
-                ThemePickerButton()
+                Spacer(minLength: 4)
 
-                // 退出按钮
+                // 退出登录按钮
                 Button {
                     NetworkManager.shared.logout()
                     userProfile = nil
@@ -154,41 +185,58 @@ struct Sidebar: View {
                     player.likedSongIds = []
                 } label: {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .background(Color.primary.opacity(0.04), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .help("退出登录")
-            } else {
-                // 未登录：显示登录按钮
-                Button {
-                    showLogin = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(.quaternary)
-                            .frame(width: 32, height: 32)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.secondary)
-                            )
-                        Text("登录网易云")
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: "qrcode")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-
-                ThemePickerButton()
+                .help("退出登录".localized)
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+        } else {
+            // 未登录：整行卡片式点击登录
+            Button {
+                showLogin = true
+            } label: {
+                HStack(spacing: 9) {
+                    Circle()
+                        .fill(Color.primary.opacity(0.06))
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.secondary)
+                        )
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("登录网易云".localized)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.primary)
+
+                        Text("同步歌单与收藏".localized)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.03))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.regularMaterial)
     }
 
     private func checkLoginStatus() async {
@@ -227,4 +275,5 @@ struct Sidebar: View {
 #Preview {
     Sidebar(selection: .constant("home"))
         .environment(ThemeManager.shared)
+        .environment(LanguageManager.shared)
 }

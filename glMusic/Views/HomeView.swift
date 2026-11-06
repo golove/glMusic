@@ -32,13 +32,13 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 32) {
                     // MARK: - Title
-                    Text("现在就听")
+                    Text("现在就听".localized)
                         .font(.system(size: 32, weight: .bold))
                         .padding(.horizontal, 28)
                         .padding(.top, 16)
 
                     if isLoading {
-                        ProgressView("加载精彩内容...")
+                        ProgressView("加载精彩内容...".localized)
                             .frame(maxWidth: .infinity, minHeight: 260)
                     } else if let err = errorMsg {
                         errorView(err)
@@ -81,7 +81,7 @@ struct HomeView: View {
                         // MARK: - 推荐歌单
                         if !playlists.isEmpty {
                             VStack(alignment: .leading, spacing: 14) {
-                                sectionHeader("推荐歌单")
+                                sectionHeader("推荐歌单".localized)
                                 ScrollViewReader { playlistProxy in
                                     ScrollView(.horizontal, showsIndicators: false) {
                                         HStack(spacing: 18) {
@@ -119,7 +119,7 @@ struct HomeView: View {
                         // MARK: - 新歌推荐 (双列 Apple Music 排版)
                         if !newSongs.isEmpty {
                             VStack(alignment: .leading, spacing: 14) {
-                                sectionHeader("新歌速递")
+                                sectionHeader("新歌速递".localized)
                                 LazyVGrid(columns: songColumns, spacing: 4) {
                                     ForEach(Array(newSongs.prefix(12).enumerated()), id: \.offset) { idx, song in
                                         Button {
@@ -349,7 +349,7 @@ struct HomeView: View {
             Text(msg)
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Button("重试") { Task { await loadData() } }
+            Button("重试".localized) { Task { await loadData() } }
                 .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
@@ -367,7 +367,7 @@ struct HomeView: View {
             playlists = fetchedPL
             newSongs = fetchedNS.compactMap(\.asAPISong)
         } catch {
-            errorMsg = "无法连接到 API 服务\n请确认 127.0.0.1:3000 已启动"
+            errorMsg = "无法连接到 API 服务\n请确认 127.0.0.1:3000 已启动".localized
             print("HomeView error: \(error)")
         }
         isLoading = false
@@ -604,7 +604,7 @@ struct FeaturedBannerCard: View {
             // 专辑
             HStack(spacing: 5) {
                 Image(systemName: "opticaldisc")
-                Text("专辑")
+                Text("专辑".localized)
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.white)
@@ -617,7 +617,7 @@ struct FeaturedBannerCard: View {
             // 歌单
             HStack(spacing: 5) {
                 Image(systemName: "music.note.list")
-                Text("歌单")
+                Text("歌单".localized)
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.white)
@@ -630,7 +630,7 @@ struct FeaturedBannerCard: View {
             // 网页 / 活动
             HStack(spacing: 5) {
                 Image(systemName: "safari")
-                Text("活动")
+                Text("活动".localized)
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.white)
@@ -738,7 +738,7 @@ struct PlaylistCard: View {
                         .multilineTextAlignment(.leading)
 
                     if let count = playlist.playCount {
-                        Text(formatCount(count) + " 次播放")
+                        Text(formatCount(count) + " " + "次播放".localized)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -875,4 +875,5 @@ struct NewSongRow: View {
     HomeView()
         .environment(PlayerManager())
         .environment(ThemeManager.shared)
+        .environment(LanguageManager.shared)
 }

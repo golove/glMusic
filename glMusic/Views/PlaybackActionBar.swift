@@ -10,11 +10,11 @@ import SwiftUI
 /// 统一的播放操作栏（播放、随机播放、下载全部）
 struct PlaybackActionBar: View {
     let songs: [APISong]
-    var playTitle: String = "播放"
-    var shuffleTitle: String = "随机播放"
-    var downloadTitle: String = "下载全部"
+    var playTitle: String = "播放".localized
+    var shuffleTitle: String = "随机播放".localized
+    var downloadTitle: String = "下载全部".localized
     var showDownloadAll: Bool = true
-    var downloadHelpText: String = "下载全部歌曲到本地"
+    var downloadHelpText: String = "下载全部歌曲到本地".localized
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
 

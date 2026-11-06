@@ -18,15 +18,15 @@ struct ThemePickerView: View {
                 Image(systemName: "paintpalette.fill")
                     .foregroundStyle(themeManager.accentColor)
                     .font(.system(size: 15))
-                Text("个性化主题")
+                Text("个性化主题".localized)
                     .font(.headline)
                 Spacer()
-                Text(themeManager.currentTheme.rawValue)
+                Text(themeManager.currentTheme.localizedName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Text("为应用选择一套你喜欢的清新色调，实时同步至全站操作、指示器与动效")
+            Text("为应用选择一套你喜欢的清新色调，实时同步至全站操作、指示器与动效".localized)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -62,7 +62,7 @@ struct ThemePickerView: View {
                             .shadow(color: theme.primaryColor.opacity(0.3), radius: 4, y: 2)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(theme.rawValue)
+                                Text(theme.localizedName)
                                     .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                                     .foregroundStyle(isSelected ? theme.primaryColor : .primary)
                                 Text(theme.englishName)
@@ -96,12 +96,13 @@ struct ThemePickerView: View {
 struct ThemePickerButton: View {
     @Environment(ThemeManager.self) private var themeManager
     @State private var showPopover = false
+    @State private var isHovered = false
 
     var body: some View {
         Button {
             showPopover.toggle()
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Circle()
                     .fill(
                         LinearGradient(
@@ -110,16 +111,27 @@ struct ThemePickerButton: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 14, height: 14)
-                Image(systemName: "paintpalette")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .frame(width: 9, height: 9)
+                Text(themeManager.currentTheme.localizedName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
             }
-            .padding(6)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? Color.primary.opacity(0.08) : Color.primary.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.primary.opacity(isHovered ? 0.12 : 0.04), lineWidth: 0.5)
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("切换清新主题（当前: \(themeManager.currentTheme.rawValue)）")
+        .onHover { isHovered = $0 }
+        .help("切换清新主题（当前: %@）".localized(with: themeManager.currentTheme.localizedName))
         .popover(isPresented: $showPopover, arrowEdge: .top) {
             ThemePickerView {
                 showPopover = false

@@ -35,7 +35,7 @@ struct ArtistDetailView: View {
                    
 
                 if isLoading {
-                    ProgressView("加载艺人资料...")
+                    ProgressView("加载艺人资料...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
                     // Hot 50 Songs
@@ -60,7 +60,7 @@ struct ArtistDetailView: View {
                     // Albums
                     if !albums.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("专辑")
+                            Text("专辑".localized)
                                 .font(.title2.bold())
                                 .padding(.horizontal, 24)
 
@@ -116,7 +116,7 @@ struct ArtistDetailView: View {
             .padding(.horizontal , 6)
             .buttonStyle(.plain)
             .keyboardShortcut("[", modifiers: [.command])
-            .help("返回 (⌘[)")
+            .help("返回 (⌘[)".localized)
 
            
         }
@@ -150,27 +150,27 @@ struct ArtistDetailView: View {
 
                 // Info
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("艺人")
+                    Text("艺人".localized)
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
 
-                    Text(artist?.name ?? "艺人")
+                    Text(artist?.name ?? "艺人".localized)
                         .font(.system(size: 28, weight: .bold))
 
                     HStack(spacing: 8) {
                         if let songsCount = artist?.musicSize, songsCount > 0 {
-                            Text("\(songsCount) 首单曲")
+                            Text("%d 首单曲".localized(with: songsCount))
                         }
                         if let albumCount = artist?.albumSize, albumCount > 0 {
-                            Text("· \(albumCount) 张专辑")
+                            Text("· %d 张专辑".localized(with: albumCount))
                         }
                     }
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     Spacer()
                     HStack {
-                        Text("热门歌曲")
+                        Text("热门歌曲".localized)
                             .font(.title2.bold())
 
         //                Spacer()
@@ -181,7 +181,7 @@ struct ArtistDetailView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "play.fill")
                                     .font(.system(size: 10))
-                                Text("播放全部")
+                                Text("播放全部".localized)
                                     .font(.system(size: 12, weight: .medium))
                             }
                             .padding(.horizontal, 12)

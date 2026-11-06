@@ -22,6 +22,10 @@ struct DownloadedSongsView: View {
         case local = "本地导入"
         case downloaded = "已下载"
         var id: String { rawValue }
+
+        var displayName: String {
+            rawValue.localized
+        }
     }
 
     private var filteredSongs: [DownloadedSong] {
@@ -128,10 +132,10 @@ struct DownloadedSongsView: View {
                             Image(systemName: "arrow.down.doc.fill")
                                 .font(.system(size: 44))
                                 .foregroundStyle(themeManager.accentColor)
-                            Text("松开以导入本地音频文件到资料库")
+                            Text("松开以导入本地音频文件到资料库".localized)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(.primary)
-                            Text("支持 MP3、FLAC、M4A、WAV、AAC、AIFF、OGG 及伴生 LRC 歌词")
+                            Text("支持 MP3、FLAC、M4A、WAV、AAC、AIFF、OGG 及伴生 LRC 歌词".localized)
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                         }
@@ -140,16 +144,16 @@ struct DownloadedSongsView: View {
             }
         }
         .confirmationDialog(
-            "确认清空所有已下载歌曲？",
+            "确认清空所有已下载歌曲？".localized,
             isPresented: $showClearConfirm,
             titleVisibility: .visible
         ) {
-            Button("清空全部下载文件", role: .destructive) {
+            Button("清空全部下载文件".localized, role: .destructive) {
                 downloadManager.clearAllDownloads()
             }
-            Button("取消", role: .cancel) { }
+            Button("取消".localized, role: .cancel) { }
         } message: {
-            Text("将从本地磁盘删除全部已下载与已导入的音频、封面和歌词文件。")
+            Text("将从本地磁盘删除全部已下载与已导入的音频、封面和歌词文件。".localized)
         }
     }
 
@@ -162,7 +166,7 @@ struct DownloadedSongsView: View {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.system(size: 26))
                         .foregroundStyle(themeManager.accentColor)
-                    Text("本地与下载")
+                    Text("本地与下载".localized)
                         .font(.largeTitle.bold())
                 }
 
@@ -174,7 +178,7 @@ struct DownloadedSongsView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        TextField("在歌曲中搜索...", text: $searchText)
+                        TextField("在歌曲中搜索...".localized, text: $searchText)
                             .textFieldStyle(.plain)
                             .font(.system(size: 12))
                         if !searchText.isEmpty {
@@ -205,7 +209,7 @@ struct DownloadedSongsView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "play.fill")
                                 .font(.system(size: 11))
-                            Text("全部播放")
+                            Text("全部播放".localized)
                                 .font(.system(size: 13, weight: .semibold))
                         }
                         .padding(.horizontal, 16)
@@ -223,7 +227,7 @@ struct DownloadedSongsView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "shuffle")
                                 .font(.system(size: 11))
-                            Text("随机播放")
+                            Text("随机播放".localized)
                                 .font(.system(size: 13, weight: .medium))
                         }
                         .padding(.horizontal, 16)
@@ -241,7 +245,7 @@ struct DownloadedSongsView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 12))
-                        Text("导入本地歌曲")
+                        Text("导入本地歌曲".localized)
                             .font(.system(size: 13, weight: .medium))
                     }
                     .padding(.horizontal, 14)
@@ -251,7 +255,7 @@ struct DownloadedSongsView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut("o", modifiers: [.command])
-                .help("选择本地音频文件或文件夹导入资料库 (支持拖拽，快捷键 ⌘O)")
+                .help("选择本地音频文件或文件夹导入资料库 (支持拖拽，快捷键 ⌘O)".localized)
 
                 // Open Finder folder
                 if !downloadManager.downloadedSongs.isEmpty {
@@ -261,7 +265,7 @@ struct DownloadedSongsView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "folder")
                                 .font(.system(size: 12))
-                            Text("在访达中显示文件夹")
+                            Text("在访达中显示文件夹".localized)
                                 .font(.system(size: 12, weight: .medium))
                         }
                         .padding(.horizontal, 12)
@@ -269,7 +273,7 @@ struct DownloadedSongsView: View {
                         .background(.quaternary.opacity(0.7), in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .help("打开本地保存目录")
+                    .help("打开本地保存目录".localized)
                 }
 
                 Spacer()
@@ -283,7 +287,7 @@ struct DownloadedSongsView: View {
                                 Button {
                                     filterMode = mode
                                 } label: {
-                                    Text("\(mode.rawValue) (\(count))")
+                                    Text("\(mode.displayName) (\(count))")
                                         .font(.system(size: 11, weight: filterMode == mode ? .semibold : .regular))
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 5)
@@ -297,7 +301,7 @@ struct DownloadedSongsView: View {
 
                     // Info text & Clear
                     HStack(spacing: 10) {
-                        Text("\(downloadManager.downloadedSongs.count) 首 · \(downloadManager.totalDiskSpaceText)")
+                        Text(String(format: "%d 首 · %@".localized, downloadManager.downloadedSongs.count, downloadManager.totalDiskSpaceText))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
 
@@ -309,7 +313,7 @@ struct DownloadedSongsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
-                        .help("清空全部歌曲")
+                        .help("清空全部歌曲".localized)
                     }
                 }
             }
@@ -332,12 +336,12 @@ struct DownloadedSongsView: View {
     private var tableHeaderView: some View {
         HStack(spacing: 0) {
             Text("#").frame(width: 36, alignment: .center)
-            Text("标题").frame(maxWidth: .infinity, alignment: .leading)
-            Text("艺人").frame(width: 150, alignment: .leading)
-            Text("专辑").frame(width: 150, alignment: .leading)
-            Text("大小").frame(width: 80, alignment: .leading)
+            Text("标题".localized).frame(maxWidth: .infinity, alignment: .leading)
+            Text("艺人".localized).frame(width: 150, alignment: .leading)
+            Text("专辑".localized).frame(width: 150, alignment: .leading)
+            Text("大小".localized).frame(width: 80, alignment: .leading)
             Image(systemName: "clock").frame(width: 60, alignment: .trailing)
-            Text("操作").frame(width: 70, alignment: .center)
+            Text("操作".localized).frame(width: 70, alignment: .center)
         }
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(.secondary)
@@ -393,18 +397,18 @@ struct DownloadedSongsView: View {
 
                     // 本地或已下载标记
                     if song.isLocal {
-                        Text("本地")
+                        Text("本地".localized)
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(themeManager.accentColor)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(themeManager.tintColor, in: RoundedRectangle(cornerRadius: 3))
-                            .help("本地导入音频")
+                            .help("本地导入音频".localized)
                     } else {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(themeManager.accentColor.opacity(0.8))
-                            .help("已下载至本地")
+                            .help("已下载至本地".localized)
                     }
                 }
             }
@@ -447,7 +451,7 @@ struct DownloadedSongsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("在访达中显示")
+                    .help("在访达中显示".localized)
 
                     Button {
                         downloadManager.deleteDownload(song.id)
@@ -457,7 +461,7 @@ struct DownloadedSongsView: View {
                             .foregroundStyle(.red.opacity(0.8))
                     }
                     .buttonStyle(.plain)
-                    .help(song.isLocal ? "从资料库移除" : "删除此本地文件")
+                    .help((song.isLocal ? "从资料库移除" : "删除此本地文件").localized)
                 }
             }
             .frame(width: 70, alignment: .center)
@@ -470,13 +474,13 @@ struct DownloadedSongsView: View {
             Button {
                 playSong(song)
             } label: {
-                Label("立即播放", systemImage: "play.fill")
+                Label("立即播放".localized, systemImage: "play.fill")
             }
 
             Button {
                 player.addToPlaylist(song.asAPISong)
             } label: {
-                Label("添加到播放队列", systemImage: "text.badge.plus")
+                Label("添加到播放队列".localized, systemImage: "text.badge.plus")
             }
 
             Divider()
@@ -484,13 +488,13 @@ struct DownloadedSongsView: View {
             Button {
                 downloadManager.revealInFinder(song.id)
             } label: {
-                Label("在访达中显示", systemImage: "folder")
+                Label("在访达中显示".localized, systemImage: "folder")
             }
 
             Button(role: .destructive) {
                 downloadManager.deleteDownload(song.id)
             } label: {
-                Label(song.isLocal ? "从资料库移除" : "删除已下载文件", systemImage: "trash")
+                Label((song.isLocal ? "从资料库移除" : "删除已下载文件").localized, systemImage: "trash")
             }
         }
     }
@@ -535,10 +539,10 @@ struct DownloadedSongsView: View {
                 .font(.system(size: 60))
                 .foregroundStyle(.tertiary)
 
-            Text("暂无本地与下载歌曲")
+            Text("暂无本地与下载歌曲".localized)
                 .font(.title2.bold())
 
-            Text("点击下方按钮选择音频文件，或直接将音频文件/文件夹拖拽至此窗口")
+            Text("点击下方按钮选择音频文件，或直接将音频文件/文件夹拖拽至此窗口".localized)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -550,7 +554,7 @@ struct DownloadedSongsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 13))
-                    Text("导入本地歌曲")
+                    Text("导入本地歌曲".localized)
                         .font(.system(size: 13, weight: .semibold))
                 }
                 .padding(.horizontal, 22)

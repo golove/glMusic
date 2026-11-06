@@ -40,10 +40,10 @@ struct RadioView: View {
             VStack(alignment: .leading, spacing: 32) {
                 // MARK: - 页面标题
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("广播")
+                    Text("广播".localized)
                         .font(.system(size: 32, weight: .bold))
 
-                    Text("全天候精选电台、深度对谈与精彩播客")
+                    Text("全天候精选电台、深度对谈与精彩播客".localized)
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                 }
@@ -51,7 +51,7 @@ struct RadioView: View {
                 .padding(.top, 16)
 
                 if isLoading {
-                    ProgressView("正在调频广播频道...")
+                    ProgressView("正在调频广播频道...".localized)
                         .frame(maxWidth: .infinity, minHeight: 260)
                 } else if let err = errorMsg {
                     errorView(err)
@@ -73,7 +73,7 @@ struct RadioView: View {
                     // MARK: - 2. 精选电台推荐 (横向滑动卡片)
                     if !recommendedRadios.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
-                            sectionHeader("热门电台推荐")
+                            sectionHeader("热门电台推荐".localized)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 18) {
                                     ForEach(recommendedRadios) { radio in
@@ -92,7 +92,7 @@ struct RadioView: View {
                     // MARK: - 3. 热门广播节目 (双列 Apple Music 速递排版)
                     if !topPrograms.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
-                            sectionHeader("热门广播节目")
+                            sectionHeader("热门广播节目".localized)
                             LazyVGrid(columns: programColumns, spacing: 8) {
                                 ForEach(Array(topPrograms.prefix(8).enumerated()), id: \.element.id) { idx, item in
                                     RadioTopProgramRow(
@@ -113,13 +113,13 @@ struct RadioView: View {
 
                     // MARK: - 4. 分类探索与电台网格
                     VStack(alignment: .leading, spacing: 16) {
-                        sectionHeader("分类探索")
+                        sectionHeader("分类探索".localized)
 
                         // 分类切换胶囊
                         if !categories.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
-                                    categoryPill(title: "热门推荐", isSelected: selectedCategoryId == nil) {
+                                    categoryPill(title: "热门推荐".localized, isSelected: selectedCategoryId == nil) {
                                         selectCategory(nil)
                                     }
 
@@ -151,7 +151,7 @@ struct RadioView: View {
                                 }
                                 .padding(.horizontal, 28)
                             } else {
-                                Text("该分类下暂无电台")
+                                Text("该分类下暂无电台".localized)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 28)
@@ -196,7 +196,7 @@ struct RadioView: View {
             Text(msg)
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Button("重新加载") { Task { await loadData() } }
+            Button("重新加载".localized) { Task { await loadData() } }
                 .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
@@ -219,7 +219,7 @@ struct RadioView: View {
             topPrograms = fetchedTop
             categories = fetchedCats
         } catch {
-            errorMsg = "无法连接到广播服务\n请确认 127.0.0.1:3000 已启动"
+            errorMsg = "无法连接到广播服务\n请确认 127.0.0.1:3000 已启动".localized
             print("RadioView error: \(error)")
         }
         isLoading = false
@@ -500,7 +500,7 @@ struct RadioTopProgramRow: View {
                     .foregroundStyle(isPlaying ? .pink : .primary)
                     .lineLimit(1)
 
-                Text(program.radio?.name ?? program.dj?.nickname ?? "广播电台")
+                Text(program.radio?.name ?? program.dj?.nickname ?? "广播电台".localized)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -540,19 +540,19 @@ struct RadioTopProgramRow: View {
                 Button {
                     player.play(song)
                 } label: {
-                    Label("立即播放", systemImage: "play.fill")
+                    Label("立即播放".localized, systemImage: "play.fill")
                 }
 
                 Button {
                     player.playNext(song)
                 } label: {
-                    Label("下一首播放", systemImage: "text.insert")
+                    Label("下一首播放".localized, systemImage: "text.insert")
                 }
 
                 Button {
                     player.addToPlaylist(song)
                 } label: {
-                    Label("添加到待播列表", systemImage: "text.badge.plus")
+                    Label("添加到待播列表".localized, systemImage: "text.badge.plus")
                 }
 
                 Divider()
@@ -561,19 +561,19 @@ struct RadioTopProgramRow: View {
                     Button {
                         DownloadManager.shared.revealInFinder(song.id)
                     } label: {
-                        Label("在访达中显示", systemImage: "folder")
+                        Label("在访达中显示".localized, systemImage: "folder")
                     }
 
                     Button(role: .destructive) {
                         DownloadManager.shared.deleteDownload(song.id)
                     } label: {
-                        Label("删除已下载文件", systemImage: "trash")
+                        Label("删除已下载文件".localized, systemImage: "trash")
                     }
                 } else {
                     Button {
                         DownloadManager.shared.downloadSong(song)
                     } label: {
-                        Label("下载节目", systemImage: "arrow.down.circle")
+                        Label("下载节目".localized, systemImage: "arrow.down.circle")
                     }
                 }
 
@@ -582,7 +582,7 @@ struct RadioTopProgramRow: View {
                 Button {
                     player.toggleLike(for: song)
                 } label: {
-                    Label(player.isLiked(song.id) ? "取消喜欢" : "喜欢此节目",
+                    Label((player.isLiked(song.id) ? "取消喜欢" : "喜欢此节目").localized,
                           systemImage: player.isLiked(song.id) ? "heart.slash" : "heart")
                 }
             }

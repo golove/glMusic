@@ -21,7 +21,7 @@ struct ContentView: View {
             NavigationSplitView {
                 Sidebar(selection: $selection)
                     .toolbar(removing: .sidebarToggle)
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+                    .navigationSplitViewColumnWidth(220)
             } detail: {
                 ZStack {
                     // 主题流光氛围背景 (优雅通透，自适应随主题平滑渐变)
@@ -34,7 +34,7 @@ struct ContentView: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     // 悬浮胶囊播放栏
                     PlayerBar(selection: $selection)
-                        .padding(.horizontal, 60)
+                        .padding(.horizontal, 130)
                         .padding(.bottom, 16)
                         .zIndex(99)
                 }
@@ -47,15 +47,16 @@ struct ContentView: View {
             // 全屏动效歌词视图 (Apple Music 风格)
             if player.isShowingLyrics {
                 LyricsView(selection: $selection)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .transition(.opacity)
                     .zIndex(100)
             }
 
             // 全局快捷键处理 (隐藏按钮)
             keyboardShortcuts
         }
+        .frame(minWidth: 1280,minHeight: 720)
         .background(WindowToolbarAccessor())
-        .animation(.easeInOut(duration: 0.28), value: player.isShowingLyrics)
+        .animation(.easeInOut(duration: 0.35), value: player.isShowingLyrics)
         .onChange(of: selection) { oldValue, newValue in
             guard !isNavigatingBack else { return }
             if let old = oldValue, old != newValue {
@@ -155,22 +156,22 @@ struct ContentView: View {
 
     private var keyboardShortcuts: some View {
         Group {
-            Button("返回上一级") { goBack() }
+            Button("返回上一级".localized) { goBack() }
                 .keyboardShortcut("[", modifiers: [.command])
 
-            Button("播放/暂停") { player.togglePlay() }
+            Button("播放/暂停".localized) { player.togglePlay() }
                 .keyboardShortcut(.space, modifiers: [])
 
-            Button("上一首") { player.previous() }
+            Button("上一首".localized) { player.previous() }
                 .keyboardShortcut(.leftArrow, modifiers: [.command])
 
-            Button("下一首") { player.next() }
+            Button("下一首".localized) { player.next() }
                 .keyboardShortcut(.rightArrow, modifiers: [.command])
 
-            Button("调高音量") { player.volume = min(1.0, player.volume + 0.05) }
+            Button("调高音量".localized) { player.volume = min(1.0, player.volume + 0.05) }
                 .keyboardShortcut(.upArrow, modifiers: [.command])
 
-            Button("调低音量") { player.volume = max(0.0, player.volume - 0.05) }
+            Button("调低音量".localized) { player.volume = max(0.0, player.volume - 0.05) }
                 .keyboardShortcut(.downArrow, modifiers: [.command])
         }
         .frame(width: 0, height: 0)
@@ -182,4 +183,5 @@ struct ContentView: View {
     ContentView()
         .environment(PlayerManager())
         .environment(ThemeManager.shared)
+        .environment(LanguageManager.shared)
 }

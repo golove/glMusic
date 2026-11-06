@@ -68,7 +68,7 @@ struct ArtistLinksView: View {
         let validArtists = (artists ?? []).filter { !($0.name ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
 
         if validArtists.isEmpty {
-            Text(fallbackText.isEmpty ? "未知艺人" : fallbackText)
+            Text(fallbackText.isEmpty ? "未知艺人".localized : fallbackText)
                 .font(.system(size: fontSize, weight: weight))
                 .foregroundStyle(normalColor)
                 .lineLimit(1)

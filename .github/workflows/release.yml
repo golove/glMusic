@@ -61,17 +61,19 @@ jobs:
           test -d "$STAGE"
           test -d "$STAGE/glMusic.app"
 
-          # 使用新版 diskutil 创建压缩 DMG
+          # 使用新版 macOS diskutil image create from 创建压缩 DMG
           diskutil image create from \
-          "$STAGE" \
-          "$DIST/glMusic.dmg" \
-           --format UDZO
+            --volumeName "glMusic" \
+            --format UDZO \
+            "$STAGE" \
+            "$DIST/glMusic.dmg"
 
-          # 检查 DMG 是否成功生成
+          # 检查 DMG 是否成功生成并输出镜像信息
           test -s "$DIST/glMusic.dmg"
+          diskutil image info "$DIST/glMusic.dmg"
 
-          # 输出文件信息
-          ls -lh "$DIST/glMusic.dmg"
+          # 输出构建产物文件信息
+          ls -lh "$DIST/glMusic.zip" "$DIST/glMusic.dmg"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

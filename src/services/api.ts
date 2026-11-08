@@ -358,5 +358,22 @@ export const api = {
 
   async saveLocalFavorites(data: Song[]): Promise<void> {
     await invoke('save_local_favorites', { data });
+  },
+
+  // Window Controls
+  async minimizeWindow(): Promise<void> {
+    await invoke('window_minimize');
+  },
+
+  async toggleMaximizeWindow(): Promise<boolean> {
+    return await invoke('window_toggle_maximize');
+  },
+
+  async closeWindow(): Promise<void> {
+    await invoke('window_close');
+  },
+
+  async isWindowMaximized(): Promise<boolean> {
+    return await invoke('window_is_maximized');
   }
 };

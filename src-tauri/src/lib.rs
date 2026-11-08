@@ -49,7 +49,11 @@ pub fn run() {
             commands::get_local_history,
             commands::save_local_history,
             commands::get_local_favorites,
-            commands::save_local_favorites
+            commands::save_local_favorites,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_close,
+            commands::window_is_maximized
         ])
         .run(tauri::generate_context!())
         .expect("error while running glmusic tauri application");

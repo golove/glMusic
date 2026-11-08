@@ -9,7 +9,32 @@
 
     <!-- Header Actions -->
     <div class="lyrics-header">
-      <button class="close-btn" @click="player.isShowingLyrics.value = false" title="关闭歌词">
+      <div class="header-left">
+        <!-- Translation Toggle -->
+        <button
+          class="header-tool-btn"
+          :class="{ active: player.showLyricTranslation.value }"
+          @click="player.toggleLyricTranslation()"
+          title="显示/隐藏翻译"
+        >
+          <Languages :size="17" />
+          <span>译</span>
+        </button>
+
+        <!-- Font Size Toggle -->
+        <button
+          class="header-tool-btn"
+          :class="{ active: player.largeLyricText.value }"
+          @click="player.toggleLargeLyricText()"
+          title="切换大字号"
+        >
+          <Type :size="17" />
+          <span>{{ player.largeLyricText.value ? '标准' : '大字' }}</span>
+        </button>
+      </div>
+
+      <!-- Close Button -->
+      <button class="close-btn" @click="player.isShowingLyrics.value = false" title="关闭歌词 (Esc)">
         <ChevronDown :size="24" />
       </button>
     </div>
@@ -26,9 +51,27 @@
           />
         </div>
         <div class="track-details">
-          <h2 class="track-title">{{ player.currentSong.value?.name || '未知歌曲' }}</h2>
-          <p class="track-artist">{{ player.currentSong.value?.artistText || '未知歌手' }}</p>
-          <p class="track-album">{{ player.currentSong.value?.album.name || '未知专辑' }}</p>
+          <h2
+            class="track-title link-text"
+            :title="player.currentSong.value?.name"
+            @click="player.currentSong.value?.album.id && (player.isShowingLyrics.value = false, player.navigate('album', player.currentSong.value.album.id))"
+          >
+            {{ player.currentSong.value?.name || '未知歌曲' }}
+          </h2>
+          <p
+            class="track-artist link-text"
+            :title="player.currentSong.value?.artistText"
+            @click="player.currentSong.value?.artists[0]?.id && (player.isShowingLyrics.value = false, player.navigate('artist', player.currentSong.value.artists[0].id))"
+          >
+            {{ player.currentSong.value?.artistText || '未知歌手' }}
+          </p>
+          <p
+            class="track-album link-text"
+            :title="player.currentSong.value?.album.name"
+            @click="player.currentSong.value?.album.id && (player.isShowingLyrics.value = false, player.navigate('album', player.currentSong.value.album.id))"
+          >
+            {{ player.currentSong.value?.album.name || '未知专辑' }}
+          </p>
 
           <div class="badges-row">
             <span class="badge">{{ player.soundQuality.value.toUpperCase() }}</span>
@@ -40,13 +83,14 @@
       <!-- Right Column: Karaoke Synced Lyrics -->
       <div class="lyrics-column" ref="lyricsContainer">
         <div v-if="player.isLoadingLyrics.value" class="lyrics-status">
-          <Loader2 class="spin-icon" :size="28" />
+          <Loader2 class="spin-icon" :size="32" />
           <span>正在加载歌词...</span>
         </div>
         <div v-else-if="player.lyrics.value.length === 0" class="lyrics-status">
-          <span>暂无歌词</span>
+          <Disc3 class="spin-disc" :size="48" />
+          <span>纯音乐或暂无歌词，请尽情享受旋律</span>
         </div>
-        <div v-else class="lyrics-scroll-list">
+        <div v-else class="lyrics-scroll-list" :class="{ 'large-size': player.largeLyricText.value }">
           <div
             v-for="(line, idx) in player.lyrics.value"
             :key="idx"
@@ -59,7 +103,9 @@
             @click="seekToLine(line.time)"
           >
             <p class="lyric-text">{{ line.text }}</p>
-            <p v-if="line.translation" class="lyric-trans">{{ line.translation }}</p>
+            <p v-if="line.translation && player.showLyricTranslation.value" class="lyric-trans">
+              {{ line.translation }}
+            </p>
           </div>
         </div>
       </div>
@@ -68,8 +114,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
-import { ChevronDown, Loader2 } from 'lucide-vue-next';
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ChevronDown, Loader2, Languages, Type, Disc3 } from 'lucide-vue-next';
 import { player } from '../stores/player';
 
 const lyricsContainer = ref<HTMLElement | null>(null);
@@ -102,6 +148,20 @@ watch(
     });
   }
 );
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    player.isShowingLyrics.value = false;
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown);
+});
 </script>
 
 <style scoped>
@@ -142,9 +202,41 @@ watch(
 .lyrics-header {
   position: relative;
   z-index: 10;
-  padding: 24px 32px 10px;
+  padding: 18px 36px 8px;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-tool-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #a1a1aa;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.header-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.header-tool-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
 }
 
 .close-btn {
@@ -171,7 +263,7 @@ watch(
   z-index: 10;
   flex: 1;
   display: flex;
-  padding: 20px 80px 60px;
+  padding: 10px 80px 60px;
   gap: 80px;
   overflow: hidden;
 }
@@ -227,6 +319,16 @@ watch(
   margin: 0;
 }
 
+.link-text {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.link-text:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .badges-row {
   display: flex;
   gap: 8px;
@@ -248,9 +350,9 @@ watch(
   flex: 1;
   overflow-y: auto;
   scroll-behavior: smooth;
-  padding: 160px 0;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);
+  padding: 180px 0;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
 }
 
 .lyrics-column::-webkit-scrollbar {
@@ -265,13 +367,21 @@ watch(
   justify-content: center;
   gap: 16px;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .lyrics-scroll-list {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 30px;
+}
+
+.lyrics-scroll-list.large-size .lyric-text {
+  font-size: 38px;
+}
+
+.lyrics-scroll-list.large-size .lyric-trans {
+  font-size: 21px;
 }
 
 .lyric-line {
@@ -280,31 +390,32 @@ watch(
   transform: scale(0.96);
   transform-origin: left center;
   transition: all 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
-  padding: 4px 8px;
-  border-radius: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
 }
 
 .lyric-line:hover {
   opacity: 0.65;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .lyric-line.active {
   opacity: 1;
-  transform: scale(1.05);
-  text-shadow: 0 0 30px var(--accent);
+  transform: scale(1.06);
+  text-shadow: 0 0 25px var(--accent);
 }
 
 .lyric-text {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 700;
   color: #ffffff;
   margin: 0;
   line-height: 1.35;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.4px;
 }
 
 .lyric-trans {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.7);
   margin-top: 6px;
@@ -313,6 +424,11 @@ watch(
 
 .spin-icon {
   animation: spin 1s linear infinite;
+}
+
+.spin-disc {
+  animation: spin 12s linear infinite;
+  color: var(--accent);
 }
 
 @keyframes spin {

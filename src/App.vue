@@ -3,21 +3,27 @@
     <!-- Ambient Bokeh Background -->
     <NightBokehBackground />
 
-    <!-- Main App Layout: Sidebar + Detail Content -->
-    <div class="main-layout">
-      <Sidebar />
+    <!-- Window Shell -->
+    <div class="window-shell">
+      <!-- Top Custom TitleBar with Navigation, Brand & Window Controls -->
+      <TitleBar />
 
-      <main class="content-area">
-        <!-- Scrollable Detail View -->
-        <div class="scroll-container">
-          <component :is="currentViewComponent" />
-        </div>
+      <!-- Main Layout: Sidebar + Detail Content -->
+      <div class="main-layout">
+        <Sidebar />
 
-        <!-- Floating Apple Music Style Capsule PlayerBar -->
-        <div class="floating-player-bar">
-          <PlayerBar />
-        </div>
-      </main>
+        <main class="content-area">
+          <!-- Scrollable Detail View -->
+          <div class="scroll-container">
+            <component :is="currentViewComponent" />
+          </div>
+
+          <!-- Floating Apple Music Style Capsule PlayerBar -->
+          <div class="floating-player-bar">
+            <PlayerBar />
+          </div>
+        </main>
+      </div>
     </div>
 
     <!-- Fullscreen Synced Lyrics Overlay -->
@@ -37,6 +43,7 @@ import { player } from './stores/player';
 
 // Components
 import NightBokehBackground from './components/NightBokehBackground.vue';
+import TitleBar from './components/TitleBar.vue';
 import Sidebar from './components/Sidebar.vue';
 import PlayerBar from './components/PlayerBar.vue';
 import LyricsView from './components/LyricsView.vue';
@@ -54,6 +61,7 @@ import HistoryView from './views/HistoryView.vue';
 import FavoritesView from './views/FavoritesView.vue';
 import PlaylistDetailView from './views/PlaylistDetailView.vue';
 import AlbumDetailView from './views/AlbumDetailView.vue';
+import ArtistDetailView from './views/ArtistDetailView.vue';
 
 const currentViewComponent = computed(() => {
   switch (player.currentRoute.value) {
@@ -67,6 +75,7 @@ const currentViewComponent = computed(() => {
     case 'favorites': return FavoritesView;
     case 'playlist': return PlaylistDetailView;
     case 'album': return AlbumDetailView;
+    case 'artist': return ArtistDetailView;
     default: return HomeView;
   }
 });
@@ -81,6 +90,12 @@ function handleKeyDown(e: KeyboardEvent) {
   if (e.code === 'Space') {
     e.preventDefault();
     player.togglePlay();
+  } else if (e.altKey && e.code === 'ArrowLeft') {
+    e.preventDefault();
+    player.goBack();
+  } else if (e.altKey && e.code === 'ArrowRight') {
+    e.preventDefault();
+    player.goForward();
   } else if ((e.ctrlKey || e.metaKey) && e.code === 'ArrowRight') {
     e.preventDefault();
     player.next();
@@ -93,6 +108,14 @@ function handleKeyDown(e: KeyboardEvent) {
   } else if ((e.ctrlKey || e.metaKey) && e.code === 'ArrowDown') {
     e.preventDefault();
     player.setVolume(Math.max(0, player.volume.value - 0.05));
+  } else if (e.key === 'Escape') {
+    if (player.isShowingLyrics.value) {
+      player.isShowingLyrics.value = false;
+    } else if (player.isShowingQueue.value) {
+      player.isShowingQueue.value = false;
+    } else if (player.isShowingLoginModal.value) {
+      player.isShowingLoginModal.value = false;
+    }
   }
 }
 
@@ -118,10 +141,12 @@ html, body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Plus Jakarta Sans", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Plus Jakarta Sans", sans-serif;
   background-color: #121316;
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 #app {
@@ -135,14 +160,25 @@ html, body {
   position: relative;
   display: flex;
   overflow: hidden;
+  border-radius: 10px;
 }
 
-.main-layout {
+.window-shell {
   position: relative;
   z-index: 1;
   display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+}
+
+.main-layout {
+  flex: 1;
+  display: flex;
+  width: 100%;
+  height: calc(100% - 38px);
+  overflow: hidden;
 }
 
 .content-area {
@@ -160,8 +196,9 @@ html, body {
   overflow-x: hidden;
 }
 
+/* Custom ultra-thin Apple-style frosted scrollbars for Windows */
 .scroll-container::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 .scroll-container::-webkit-scrollbar-track {
@@ -169,12 +206,13 @@ html, body {
 }
 
 .scroll-container::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+  transition: background 0.2s ease;
 }
 
 .scroll-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.32);
 }
 
 .floating-player-bar {

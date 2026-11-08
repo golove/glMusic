@@ -13,10 +13,18 @@
         </div>
       </div>
       <div class="meta-wrapper">
-        <div class="song-title" :title="player.currentSong.value?.name">
+        <div
+          class="song-title clickable"
+          :title="player.currentSong.value?.name"
+          @click="player.currentSong.value?.album.id && player.navigate('album', player.currentSong.value.album.id)"
+        >
           {{ player.currentSong.value?.name || '等待播放' }}
         </div>
-        <div class="song-artist" :title="player.currentSong.value?.artistText">
+        <div
+          class="song-artist clickable"
+          :title="player.currentSong.value?.artistText"
+          @click="player.currentSong.value?.artists[0]?.id && player.navigate('artist', player.currentSong.value.artists[0].id)"
+        >
           {{ player.currentSong.value?.artistText || 'glMusic' }}
         </div>
       </div>
@@ -283,6 +291,16 @@ function formatTime(seconds: number): string {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.clickable {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.clickable:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .song-artist {

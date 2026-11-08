@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import type { Song, LyricLine, SoundQuality, RepeatMode, UserProfile } from '../types/music';
 import { api } from '../services/api';
 
@@ -29,17 +29,25 @@ class PlayerStore {
   public lyrics = ref<LyricLine[]>([]);
   public currentLyricIndex = ref(0);
   public isLoadingLyrics = ref(false);
+  public showLyricTranslation = ref(true);
+  public largeLyricText = ref(false);
 
-  // UI state
+  // UI state & Performance Mode
   public isShowingLyrics = ref(false);
   public isShowingQueue = ref(false);
   public isShowingLoginModal = ref(false);
   public currentUser = ref<UserProfile | null>(null);
   public accentColor = ref('#0071e3'); // Apple Music blue/crimson theme
+  public bokehPerformanceMode = ref<'full' | 'light' | 'dark'>('full');
 
-  // Navigation
+  // Navigation History
   public currentRoute = ref('home');
   public currentRouteParam = ref<any>(null);
+  public historyStack = ref<{ route: string; param?: any }[]>([]);
+  public forwardStack = ref<{ route: string; param?: any }[]>([]);
+
+  public canGoBack = computed(() => this.historyStack.value.length > 0);
+  public canGoForward = computed(() => this.forwardStack.value.length > 0);
 
   constructor() {
     this.setupAudioListeners();
@@ -104,6 +112,21 @@ class PlayerStore {
       const savedTheme = localStorage.getItem('theme_accent_color');
       if (savedTheme) {
         this.accentColor.value = savedTheme;
+      }
+
+      const savedPerf = localStorage.getItem('bokeh_performance_mode') as 'full' | 'light' | 'dark';
+      if (savedPerf) {
+        this.bokehPerformanceMode.value = savedPerf;
+      }
+
+      const savedTrans = localStorage.getItem('show_lyric_translation');
+      if (savedTrans !== null) {
+        this.showLyricTranslation.value = savedTrans === 'true';
+      }
+
+      const savedLarge = localStorage.getItem('large_lyric_text');
+      if (savedLarge !== null) {
+        this.largeLyricText.value = savedLarge === 'true';
       }
 
       // Restore history & favorites
@@ -399,8 +422,53 @@ class PlayerStore {
   }
 
   public navigate(route: string, param?: any) {
+    if (this.currentRoute.value === route && JSON.stringify(this.currentRouteParam.value) === JSON.stringify(param)) {
+      return;
+    }
+    this.historyStack.value.push({
+      route: this.currentRoute.value,
+      param: this.currentRouteParam.value
+    });
+    this.forwardStack.value = [];
     this.currentRoute.value = route;
     this.currentRouteParam.value = param;
+  }
+
+  public goBack() {
+    const prev = this.historyStack.value.pop();
+    if (!prev) return;
+    this.forwardStack.value.push({
+      route: this.currentRoute.value,
+      param: this.currentRouteParam.value
+    });
+    this.currentRoute.value = prev.route;
+    this.currentRouteParam.value = prev.param;
+  }
+
+  public goForward() {
+    const next = this.forwardStack.value.pop();
+    if (!next) return;
+    this.historyStack.value.push({
+      route: this.currentRoute.value,
+      param: this.currentRouteParam.value
+    });
+    this.currentRoute.value = next.route;
+    this.currentRouteParam.value = next.param;
+  }
+
+  public setBokehPerformanceMode(mode: 'full' | 'light' | 'dark') {
+    this.bokehPerformanceMode.value = mode;
+    localStorage.setItem('bokeh_performance_mode', mode);
+  }
+
+  public toggleLyricTranslation() {
+    this.showLyricTranslation.value = !this.showLyricTranslation.value;
+    localStorage.setItem('show_lyric_translation', this.showLyricTranslation.value.toString());
+  }
+
+  public toggleLargeLyricText() {
+    this.largeLyricText.value = !this.largeLyricText.value;
+    localStorage.setItem('large_lyric_text', this.largeLyricText.value.toString());
   }
 }
 

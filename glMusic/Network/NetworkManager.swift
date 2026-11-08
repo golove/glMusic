@@ -269,6 +269,53 @@ final class NetworkManager: @unchecked Sendable {
         return res
     }
 
+    // MARK: - Official Playlists (歌单广场 - 官方歌单)
+
+    func officialPlaylists(cat: String = "精选", limit: Int = 60, offset: Int = 0, forceRefresh: Bool = false) async throws -> [APIPlaylist] {
+        if cat == "精选" || cat == "全部" {
+            let cacheKey = "official_playlists_\(cat)_\(limit)_\(offset)"
+            if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
+                return cached
+            }
+            // 网易云官方歌单账号 (UID: 1463586082 为云音乐官方歌单)
+            let r: UserPlaylistResponse = try await request("/user/playlist", params: [
+                "uid": "1463586082",
+                "limit": "\(limit)",
+                "offset": "\(offset)"
+            ])
+            var res = r.playlist ?? []
+            res = res.filter { $0.id != 0 }
+            await APICache.shared.set(cacheKey, value: res, ttl: 300)
+            return res
+        } else {
+            let cacheKey = "official_cat_playlists_\(cat)_\(limit)_\(offset)"
+            if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
+                return cached
+            }
+            // 分类歌单从 /top/playlist 获取并严格过滤只保留官方歌单
+            let r: TopPlaylistResponse = try await request("/top/playlist", params: [
+                "cat": cat,
+                "limit": "\(max(limit, 50))",
+                "offset": "\(offset)"
+            ])
+            let list = r.playlists ?? []
+            let res = list.filter { $0.isOfficial }
+            await APICache.shared.set(cacheKey, value: res, ttl: 300)
+            return res
+        }
+    }
+
+    func playlistHotTags(forceRefresh: Bool = false) async throws -> [APIPlaylistTag] {
+        let cacheKey = "playlist_hot_tags"
+        if !forceRefresh, let cached: [APIPlaylistTag] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
+        let r: PlaylistHotTagsResponse = try await request("/playlist/hot")
+        let res = r.tags ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 600)
+        return res
+    }
+
     func personalizedNewSongs(forceRefresh: Bool = false) async throws -> [NewSongWrapper] {
         let cacheKey = "personalized_newsongs"
         if !forceRefresh, let cached: [NewSongWrapper] = await APICache.shared.get(cacheKey) {

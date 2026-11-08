@@ -63,6 +63,9 @@ struct SongsView: View {
 
 //                        Divider().padding(.horizontal, 24)
                     }
+                    Divider()
+                        .padding(.horizontal, 24)
+                        .opacity(0.4)
                 }
                 .background(.ultraThinMaterial)
             }

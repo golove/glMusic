@@ -14,112 +14,134 @@ struct LyricsView: View {
     @Environment(LanguageManager.self) private var languageManager
     @State private var hoveredLineId: UUID?
     @State private var autoScroll = true
-
+    @State private var lastVolume: Double = 0.5
+   
     init(selection: Binding<String?>? = nil) {
         self._selection = selection ?? .constant(nil)
     }
-   
-
-    // 统一左侧区域宽度 (封面、信息、进度条、播放按钮保持一致)
-//    private let leftColumnWidth: CGFloat = 250
 
     var body: some View {
-        ZStack{
-            // Blurred Artwork Background (使用 GeometryReader
-          
-            
-            // 严格贴合窗口大小，防止图片撑大窗口)
+        ZStack(alignment: .top) {
+            // Blurred Artwork Background (严格贴合窗口大小，防止图片撑大窗口)
             backgroundArtwork
             
             // 主题流光氛围背景 (优雅通透，自适应随主题平滑渐变)
             NightBokehBackground()
 
-            // Main Content
-            VStack(spacing: 0) {
-                
-              
-//                   
+            // Main Content: 左侧专辑封面与播放控制 + 右侧滚动歌词 (保持原位布局)
+            GeometryReader { geometry in
+                let availableWidth = geometry.size.width
+                let availableHeight = geometry.size.height
 
-                // Middle: Left Album Art & Controls + Right Scrolling Lyrics
-                // 下方：左侧专辑区域 + 右侧歌词区域
-                   
-                GeometryReader { geometry in
-                    let availableWidth = geometry.size.width
-                    let availableHeight = geometry.size.height
+                // 根据窗口宽度和高度动态计算封面大小
+                let coverSize = min(
+                    availableWidth * 0.28,
+                    max(180, availableHeight * 0.45),
+                    320
+                )
 
-                    // 根据窗口宽度和高度动态计算封面大小
-                    let coverSize = min(
-                        availableWidth * 0.28,
-                        max(180, availableHeight * 0.45),
-                        320
-                    )
+                HStack(alignment: .top, spacing: 24) {
+                    leftArtSection(coverSize: coverSize)
 
-                    HStack(alignment: .top, spacing: 24) {
-                        leftArtSection(coverSize: coverSize)
-                            
-//                            .padding(.leading, if availableWidth*0.056)
-//                            .background(Color.red)
-
-                        rightLyricsSection
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-//                    .padding(.horizontal, 40)
-                    .frame(
-                        maxWidth: .infinity,
-                        maxHeight: .infinity
-                    )
+                    rightLyricsSection
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    // 顶部常驻固定导航栏 (不随下方列表滚动)
-                   
-
-
-                            HStack {
-                                topPinnedBar
-                                    .padding(.top,-42)
-                                    .padding(.leading, 74)
-                                Spacer()
-                                AudioDevicePickerAndVolume
-                                    .padding(.top,0)
-                            }
-                            .frame(width: .infinity,height: 30)
-//                            .background(Color.yellow)
-                        }
-
-
-                
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity
+                )
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            // 顶部常驻导航与控制栏 (左侧返回，右侧播放设备与音量调节，纯净无胶囊，且100%可点击)
+            topBarSection
+                .zIndex(100)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 
-    // MARK: - Background Artwork
-    
-    
-    private var AudioDevicePickerAndVolume:some View{
+    // MARK: - Top Bar Section (顶部两端常驻控制栏)
+
+    private var topBarSection: some View {
+        HStack {
+            topPinnedBar
+                .opacity(0.66)
+                .padding(.leading, 74)
+
+            Spacer()
+
+            AudioDevicePickerAndVolume
+//                .opacity(0.33)
+                .padding(.trailing, 24)
+        }
+        .frame(height: 36)
+        .padding(.top, 14)
+    }
+
+    // MARK: - Top Pinned Bar (左侧返回按钮)
+
+    private var topPinnedBar: some View {
         @Bindable var player = player
-        return HStack(spacing:8){
+        return Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                player.isShowingLyrics.toggle()
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 14, weight: .bold))
+            }
+            .padding(8)
+            .foregroundStyle(themeManager.accentColor)
+            .background(themeManager.tintColor, in: Circle())
+            .contentShape(Circle())
+        }
+        .padding(.horizontal, 6)
+//        .padding(.top,-25)
+        .buttonStyle(.plain)
+        .keyboardShortcut(.escape, modifiers: [])
+        .help("返回 (Esc)".localized)
+    }
+
+    // MARK: - Audio Device & Volume (右侧音频设备选择与音量调节)
+
+    private var AudioDevicePickerAndVolume: some View {
+        @Bindable var player = player
+        return HStack(spacing: 8) {
             // 选择播放设备 (放到音量调整前面)
             AudioDevicePickerButton(style: .lyrics)
 
             HStack(spacing: 8) {
-                
-//                    .frame(width: 14)
+                ProgressSlider(
+                    value: $player.volume,
+                    trackHeight: 6,
+                    activeColor: .white,
+                    inactiveColor: .white.opacity(0.25)
+                )
+                .frame(width: 96)
 
-                ProgressSlider(value: $player.volume, trackHeight: 6)
-                    .frame(width: 96)
-                 Image(systemName: volumeIcon)
-                     .font(.system(size: 18))
-                     .foregroundStyle(.secondary)
-                     .frame(width: 24)
-             }.frame(width: 130)
-        }.padding(.horizontal,24)
-
-        
-       
+                Button {
+                    if player.volume > 0 {
+                        lastVolume = player.volume
+                        player.volume = 0
+                    } else {
+                        player.volume = lastVolume > 0 ? lastVolume : 0.5
+                    }
+                } label: {
+                    Image(systemName: volumeIcon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(width: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(player.volume == 0 ? "取消静音".localized : "静音".localized)
+            }
+            .frame(width: 130)
+        }
+   
     }
-    
+
     private var volumeIcon: String {
         if player.volume == 0    { return "speaker.slash.fill" }
         if player.volume < 0.33  { return "speaker.wave.1.fill" }
@@ -278,7 +300,12 @@ struct LyricsView: View {
 
                 // 进度条控制
                 VStack(spacing: 4) {
-                    ProgressSlider(value: $player.progress, trackHeight: 6)
+                    ProgressSlider(
+                        value: $player.progress,
+                        trackHeight: 5,
+                        activeColor: .white,
+                        inactiveColor: .white.opacity(0.25)
+                    )
 
                     HStack {
                         Text(player.currentTimeText)
@@ -358,14 +385,14 @@ struct LyricsView: View {
                             ProgressView()
                                 .controlSize(.small)
                             Text("正在加载歌词...".localized)
-                                .font(.system(size: 14))
+                                .font(.system(size: 24))
                                 .foregroundStyle(.white.opacity(0.6))
                         }
                         .padding(.vertical, 40)
                     } else if player.lyrics.isEmpty {
                         VStack(spacing: 10) {
                             Image(systemName: "quote.bubble")
-                                .font(.system(size: 36))
+                                .font(.system(size: 32))
                                 .foregroundStyle(.white.opacity(0.3))
                             Text("纯音乐，请欣赏".localized)
                                 .font(.system(size: 16, weight: .medium))
@@ -379,7 +406,7 @@ struct LyricsView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(line.text)
-                                    .font(.system(size: isActive ? 32 : 28, weight: isActive ? .bold : .medium))
+                                    .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .medium))
                                     .foregroundStyle(
                                         isActive
                                             ? Color.white
@@ -390,7 +417,7 @@ struct LyricsView: View {
 
                                 if let trans = line.translation, !trans.isEmpty {
                                     Text(trans)
-                                        .font(.system(size: isActive ? 13 : 11, weight: .medium))
+                                        .font(.system(size: isActive ? 20 : 18, weight: .medium))
                                         .foregroundStyle(
                                             isActive
                                                 ? Color.white.opacity(0.85)
@@ -431,48 +458,18 @@ struct LyricsView: View {
             selection = "artist_\(id)"
         }
     }
-
-    // MARK: - Top Pinned Bar
-    private var topPinnedBar: some View {
-        @Bindable var player = player
-          return Button{
-                player.isShowingLyrics.toggle()
-            }label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .bold))
-   
-                }
-                .padding(8)
-                .foregroundStyle(themeManager.accentColor)
-                .background(themeManager.tintColor, in: Circle())
-                
-            }
-            .padding(.horizontal , 6)
-            .buttonStyle(.plain)
-            .keyboardShortcut(.escape, modifiers: [])
-            .help("返回 (Esc)".localized)
-            
- 
-        
-
-
-    }
 }
 
 
-
-//#Preview {
-//    LyricsView()
-//        .environment(PlayerManager())
-//        .frame(width: 1200, height: 760)
-//}
-
 #Preview("歌词布局测试") {
     let player = LyricsPreviewData.makePlayer()
+        
+        
 
     LyricsView()
         .environment(player)
         .environment(ThemeManager.shared)
-        .frame(width: 900, height: 760)
+        .environment(ThemeManager.shared)
+        .environment(LanguageManager.shared)
+        .frame(width: 1200, height: 760)
 }

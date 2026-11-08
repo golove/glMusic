@@ -85,6 +85,9 @@ struct PlaylistDetailView: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 24)
                             .padding(.bottom, 6)
+                            Divider()
+                                .padding(.horizontal, 24)
+                                .opacity(0.4)
                         }
                        
                         .background(.ultraThinMaterial)

@@ -170,6 +170,39 @@ struct LyricLine: Identifiable, Equatable {
 
 // MARK: - Playlist
 
+struct APIAvatarDetail: Codable, Hashable {
+    let userType: Int?
+    let identityLevel: Int?
+    let identityIconUrl: String?
+}
+
+struct APIPlaylistCreator: Codable, Hashable {
+    let userId: Int?
+    let userType: Int?
+    let nickname: String?
+    let avatarUrl: String?
+    let authStatus: Int?
+    let avatarDetail: APIAvatarDetail?
+
+    var displayAvatar: String? {
+        avatarUrl?.httpsURL
+    }
+
+    var isOfficial: Bool {
+        if userId == 1 || userId == 1463586082 { return true }
+        if userType == 2 || userType == 10 { return true }
+        if let nick = nickname {
+            if nick.contains("云音乐") || nick.contains("网易") || nick.contains("官方") || nick.contains("云村") {
+                return true
+            }
+        }
+        if let icon = avatarDetail?.identityIconUrl, icon.contains("4788940880") {
+            return true
+        }
+        return false
+    }
+}
+
 struct APIPlaylist: Codable, Identifiable, Hashable {
     let id: Int
     let name: String
@@ -179,13 +212,44 @@ struct APIPlaylist: Codable, Identifiable, Hashable {
     let trackCount: Int?
     let userId: Int?
     let description: String?
+    let creator: APIPlaylistCreator?
+    let tags: [String]?
 
     var displayCover: String? {
         (coverImgUrl ?? picUrl)?.httpsURL
     }
 
+    var isOfficial: Bool {
+        if userId == 1 || userId == 1463586082 { return true }
+        if let c = creator {
+            return c.isOfficial
+        }
+        return false
+    }
+
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: APIPlaylist, rhs: APIPlaylist) -> Bool { lhs.id == rhs.id }
+}
+
+struct TopPlaylistResponse: Codable {
+    let playlists: [APIPlaylist]?
+    let total: Int?
+    let more: Bool?
+    let cat: String?
+    let code: Int?
+}
+
+struct APIPlaylistTag: Codable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let category: Int?
+    let hot: Bool?
+    let position: Int?
+}
+
+struct PlaylistHotTagsResponse: Codable {
+    let tags: [APIPlaylistTag]?
+    let code: Int?
 }
 
 struct PersonalizedResponse: Codable {

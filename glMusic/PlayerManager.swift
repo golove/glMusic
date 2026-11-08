@@ -100,6 +100,9 @@ final class PlayerManager {
             currentIndex = playlist.count - 1
         }
 
+        // 自动记录到播放历史
+        HistoryManager.shared.record(song: song)
+
         // Save last played
         UserDefaults.standard.set(song.id, forKey: "last_played_song_id")
 

@@ -78,12 +78,16 @@ struct ArtistDetailView: View {
                     Spacer(minLength: 80)
                 }
             }
-                
-//                .padding(.vertical,200)
         }
             .safeAreaInset(edge: .top, spacing: 0) {
                 // 顶部常驻固定导航栏 (不随下方列表滚动)
-                albumHeader
+                VStack(spacing:0){
+                    albumHeader
+
+                    Divider()
+                        .padding(.horizontal, 24)
+                        .opacity(0.4)
+                }
             }
         .task {
             if isPreview {
@@ -137,15 +141,16 @@ struct ArtistDetailView: View {
                     case .success(let img):
                         img.resizable().aspectRatio(contentMode: .fill)
                     case .failure:
-                        Circle().fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 12).fill(.quaternary)
                             .overlay(Image(systemName: "music.mic").font(.largeTitle).foregroundStyle(.tertiary))
                     default:
-                        Circle().fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 12).fill(.quaternary)
                             .overlay(ProgressView())
                     }
                 }
                 .frame(width: 160, height: 160)
-                .clipShape(Circle())
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                
                 .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
 
                 // Info
@@ -191,32 +196,30 @@ struct ArtistDetailView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                   
+                    
                     
                 }
+                .frame( height: 160)
             
             
             }
           
             
         }
-        .padding(.vertical,10)
     }
-    
-    private var albumHeader:some View{
-        VStack{
+
+    private var albumHeader: some View {
+        HStack(alignment: .top) {
             if let onBack = onBack {
-                HStack(alignment: .top){
-                    topPinnedBar(onBack: onBack)
-                    // Header
-                    headerSection
-                        .frame(height: 190)
-                    Spacer()
-                }
-                .background(.ultraThinMaterial)
-                .zIndex(1)
+                topPinnedBar(onBack: onBack)
             }
+            // Header
+            headerSection
+                .frame(height: 190)
+            Spacer()
         }
+        .background(.ultraThinMaterial)
+      
     }
 
     private func loadArtist() async {

@@ -35,6 +35,29 @@ struct glMusicApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 720)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("关于 glMusic".localized) {
+                    NSApplication.shared.orderFrontStandardAboutPanel(
+                        options: [
+                            .applicationName: "glMusic",
+                            .credits: NSAttributedString(
+                                string: "优雅的原生 macOS 网易云音乐播放器".localized,
+                                attributes: [
+                                    .font: NSFont.systemFont(ofSize: 11),
+                                    .foregroundColor: NSColor.secondaryLabelColor
+                                ]
+                            )
+                        ]
+                    )
+                }
+
+                Button("检查更新...".localized) {
+                    Task {
+                        await UpdateManager.shared.checkForUpdates(isUserInitiated: true)
+                    }
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("导入本地音乐...".localized) {
                     DownloadManager.shared.openFilePickerToImport()

@@ -99,6 +99,7 @@ struct AlbumDetailView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 // 顶部常驻固定导航栏 (不随下方列表滚动)
                 albumHeader
+              
             }
             
         .task { await loadAlbum() }
@@ -175,7 +176,7 @@ struct AlbumDetailView: View {
                         Text("· %d 首歌曲".localized(with: size))
                     }
                     if let company = album?.company, !company.isEmpty {
-                        Text("· \(company)".localized)
+                        Text(String(format: "· %@".localized, company))
                     }
                 }
                 .font(.system(size: 12))
@@ -223,13 +224,17 @@ struct AlbumDetailView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 6)
 
-                
+                    Divider()
+                        .padding(.horizontal, 24)
+                        .opacity(0.4)
                 }
                 .zIndex(3)
                 .background(.ultraThinMaterial)
                 
             }
+            
         }
+        
     }
 
     private func loadAlbum() async {

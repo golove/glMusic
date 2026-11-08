@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var selection: String? = "home"
     @State private var navigationStack: [String] = []
     @State private var isNavigatingBack = false
+    @State private var updateManager = UpdateManager.shared
 
     var body: some View {
         ZStack {
@@ -48,6 +49,7 @@ struct ContentView: View {
             // 全屏动效歌词视图 (Apple Music 风格)
             if player.isShowingLyrics {
                 LyricsView(selection: $selection)
+                    .ignoresSafeArea()
                     .transition(.opacity)
                     .zIndex(100)
             }
@@ -61,13 +63,26 @@ struct ContentView: View {
         .onChange(of: selection) { oldValue, newValue in
             guard !isNavigatingBack else { return }
             if let old = oldValue, old != newValue {
-                let topLevelItems: Set<String> = ["home", "daily", "browse", "radio", "search", "recent", "artists", "albums", "songs", "downloaded"]
+                let topLevelItems: Set<String> = ["home", "daily", "playlistSquare", "browse", "radio", "search", "history", "artists", "albums", "songs", "downloaded"]
                 if let new = newValue, topLevelItems.contains(new) && !old.hasPrefix("playlist_") && !old.hasPrefix("album_") && !old.hasPrefix("artist_") && !old.hasPrefix("radio_") {
                     navigationStack.removeAll()
                 } else {
                     navigationStack.append(old)
                 }
             }
+        }
+        .sheet(isPresented: $updateManager.showUpdateDialog) {
+            UpdateModalView()
+        }
+        .alert("当前已是最新版本".localized, isPresented: $updateManager.showUpToDateAlert) {
+            Button("好".localized, role: .cancel) {}
+        } message: {
+            Text(String(format: "glMusic v%@ 已经是最新版本。".localized, updateManager.currentVersion))
+        }
+        .task {
+            // 延迟 1.5 秒启动更新检查，避免影响应用启动时的首屏渲染
+            try? await Task.sleep(for: .seconds(1.5))
+            await updateManager.checkForUpdates(isUserInitiated: false)
         }
     }
 
@@ -102,14 +117,16 @@ struct ContentView: View {
             HomeView(selection: $selection)
         case "daily":
             DailyRecommendView()
+        case "playlistSquare":
+            PlaylistSquareView(selection: $selection)
         case "browse":
             BrowseView(selection: $selection)
         case "radio":
             RadioView(selection: $selection)
         case "search":
             SearchView()
-        case "recent":
-            RecentlyAddedView(selection: $selection)
+        case "history":
+            HistoryView(selection: $selection)
         case "artists":
             ArtistsView(selection: $selection)
         case "albums":

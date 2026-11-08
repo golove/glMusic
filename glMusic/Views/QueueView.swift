@@ -7,82 +7,185 @@
 
 import SwiftUI
 
+enum QueueTab: Int, CaseIterable, Identifiable {
+    case queue
+    case history
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .queue: return "待播清单".localized
+        case .history: return "播放历史".localized
+        }
+    }
+}
+
 struct QueueView: View {
+    @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(LanguageManager.self) private var languageManager
+
+    @State private var selectedTab: QueueTab = .queue
+    @State private var historyManager = HistoryManager.shared
     @State private var hoveredSongId: Int?
+
+    init(selection: Binding<String?>? = nil) {
+        self._selection = selection ?? .constant(nil)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("待播清单".localized)
-                        .font(.system(size: 15, weight: .bold))
-                    Text(String(format: "%d 首歌曲".localized, player.playlist.count))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+            // MARK: - Header
+            HStack(alignment: .center, spacing: 10) {
+                // 分段选择器
+                Picker("", selection: $selectedTab) {
+                    Text(String(format: "%@ (%d)", "待播".localized, player.playlist.count))
+                        .tag(QueueTab.queue)
+                    Text(String(format: "%@ (%d)", "历史".localized, historyManager.historyItems.count))
+                        .tag(QueueTab.history)
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 175)
 
                 Spacer()
 
-                if !player.playlist.isEmpty {
+                // 清空操作
+                if selectedTab == .queue && !player.playlist.isEmpty {
                     Button("清空".localized) {
                         player.clearPlaylist()
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(themeManager.accentColor)
+                } else if selectedTab == .history && !historyManager.historyItems.isEmpty {
+                    Button("清空".localized) {
+                        historyManager.clearAll()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(themeManager.accentColor)
                 }
 
+                // 关闭按钮
                 Button {
                     player.isShowingQueue = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: 15))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .padding(.leading, 8)
+                .padding(.leading, 4)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
             .padding(.bottom, 10)
 
             Divider()
 
-            // List
-            if player.playlist.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    Image(systemName: "music.note.list")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.tertiary)
-                    Text("清单为空".localized)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+            // MARK: - List Content
+            if selectedTab == .queue {
+                queueContent
             } else {
+                historyContent
+            }
+        }
+        .frame(width: 330, height: 460)
+        .background(.regularMaterial)
+    }
+
+    // MARK: - Queue Tab Content
+
+    @ViewBuilder
+    private var queueContent: some View {
+        if player.playlist.isEmpty {
+            VStack(spacing: 8) {
+                Spacer()
+                Image(systemName: "music.note.list")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.tertiary)
+                Text("清单为空".localized)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(Array(player.playlist.enumerated()), id: \.element.id) { index, song in
+                        QueueRowView(
+                            song: song,
+                            index: index,
+                            isHovered: hoveredSongId == song.id,
+                            onHover: { h in hoveredSongId = h ? song.id : nil }
+                        )
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+
+    // MARK: - History Tab Content
+
+    @ViewBuilder
+    private var historyContent: some View {
+        if historyManager.historyItems.isEmpty {
+            VStack(spacing: 8) {
+                Spacer()
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.tertiary)
+                Text("暂无播放历史".localized)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            VStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(Array(player.playlist.enumerated()), id: \.element.id) { index, song in
-                            QueueRowView(
-                                song: song,
-                                index: index,
-                                isHovered: hoveredSongId == song.id,
-                                onHover: { h in hoveredSongId = h ? song.id : nil }
+                        ForEach(historyManager.historyItems) { item in
+                            QueueHistoryRowView(
+                                item: item,
+                                isHovered: hoveredSongId == item.song.id,
+                                onHover: { h in hoveredSongId = h ? item.song.id : nil },
+                                onRemove: {
+                                    historyManager.remove(item: item)
+                                }
                             )
                         }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                 }
+
+                Divider()
+
+                // 底部通往完整历史页面的按钮
+                Button {
+                    player.isShowingQueue = false
+                    selection = "history"
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("查看全部历史与统计".localized)
+                            .font(.system(size: 11, weight: .medium))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(themeManager.accentColor)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.02))
+                }
+                .buttonStyle(.plain)
             }
         }
-        .frame(width: 320, height: 460)
-        .background(.regularMaterial)
     }
 }
 
@@ -172,8 +275,8 @@ private struct QueueRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
         .background(
             isHovered
                 ? Color.primary.opacity(0.06)
@@ -188,8 +291,131 @@ private struct QueueRowView: View {
     }
 }
 
+// MARK: - Subview for Queue History Row
+
+private struct QueueHistoryRowView: View {
+    let item: PlayHistoryItem
+    let isHovered: Bool
+    let onHover: (Bool) -> Void
+    var onRemove: () -> Void
+
+    @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
+
+    private var song: APISong { item.song }
+
+    var body: some View {
+        let isCurrent = player.currentSong?.id == song.id
+
+        HStack(spacing: 10) {
+            // Status / Play indicator
+            ZStack {
+                if isCurrent {
+                    Image(systemName: player.isPlaying ? "speaker.wave.2.fill" : "pause.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(themeManager.accentColor)
+                } else if isHovered {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.primary)
+                } else {
+                    Image(systemName: "clock")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 22)
+
+            // Cover
+            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().aspectRatio(contentMode: .fill)
+                default:
+                    Rectangle().fill(.quaternary)
+                }
+            }
+            .frame(width: 32, height: 32)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            // Title & Artist
+            VStack(alignment: .leading, spacing: 2) {
+                Text(song.name)
+                    .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
+                    .foregroundStyle(isCurrent ? themeManager.accentColor : .primary)
+                    .lineLimit(1)
+
+                Text(song.displayArtist)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if isHovered {
+                HStack(spacing: 8) {
+                    DownloadButton(song: song, iconSize: 11)
+
+                    Button(action: onRemove) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("从历史中移除".localized)
+                }
+                .padding(.trailing, 4)
+            } else {
+                Text(item.relativeTimeText)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            isHovered
+                ? Color.primary.opacity(0.06)
+                : (isCurrent ? themeManager.tintColor : Color.clear),
+            in: RoundedRectangle(cornerRadius: 6)
+        )
+        .contentShape(Rectangle())
+        .onHover { onHover($0) }
+        .onTapGesture {
+            player.play(song)
+        }
+        .contextMenu {
+            Button {
+                player.play(song)
+            } label: {
+                Label("立即播放".localized, systemImage: "play.fill")
+            }
+
+            Button {
+                player.playNext(song)
+            } label: {
+                Label("下一首播放".localized, systemImage: "text.insert")
+            }
+
+            Button {
+                player.addToPlaylist(song)
+            } label: {
+                Label("添加到播放列表".localized, systemImage: "text.badge.plus")
+            }
+
+            Divider()
+
+            Button(role: .destructive, action: onRemove) {
+                Label("从历史中移除".localized, systemImage: "trash")
+            }
+        }
+    }
+}
+
 #Preview {
     QueueView()
         .environment(PlayerManager())
         .environment(ThemeManager.shared)
+        .environment(LanguageManager.shared)
 }

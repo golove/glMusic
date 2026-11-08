@@ -250,9 +250,9 @@ struct PlayerBar: View {
                     .foregroundStyle(player.isShowingQueue ? themeManager.accentColor : .secondary)
             }
             .buttonStyle(.plain)
-            .help("待播清单".localized)
+            .help("待播清单与播放历史".localized)
             .popover(isPresented: $player.isShowingQueue, arrowEdge: .top) {
-                QueueView()
+                QueueView(selection: $selection)
             }
 
             // 选择播放设备 (放到音量调整前面)
@@ -291,26 +291,26 @@ struct PlayerBar: View {
 
 struct ProgressSlider: View {
     @Binding var value: Double
-    var trackHeight:Double
+    var trackHeight: Double
+    var activeColor: Color? = nil
+    var inactiveColor: Color? = nil
+    var interactiveHeight: CGFloat = 14
     @State private var isHovering = false
     @State private var isDragging = false
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let trackH: CGFloat = (isHovering || isDragging) ? 6 : trackHeight
-//            let thumbSize: CGFloat = (isHovering || isDragging) ? 12 : 0
+            let trackH: CGFloat = (isHovering || isDragging) ? max(trackHeight + 2, 6) : trackHeight
 
             ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary).frame(height: trackH)
-                Capsule().fill(.primary.opacity(0.8))
-                    .frame(width: max(0, w * value), height: trackH)
-//                if thumbSize > 0 {
-//                    Circle().fill(.white)
-//                        .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
-//                        .frame(width: thumbSize, height: thumbSize)
-//                        .offset(x: max(0, w * value - thumbSize / 2))
-//                }
+                Capsule()
+                    .fill(inactiveColor ?? Color.primary.opacity(0.18))
+                    .frame(height: trackH)
+
+                Capsule()
+                    .fill(activeColor ?? Color.primary.opacity(0.85))
+                    .frame(width: w > 0 ? max(0, min(w, w * value)) : 0, height: trackH)
             }
             .frame(height: geo.size.height)
             .contentShape(Rectangle())
@@ -318,13 +318,15 @@ struct ProgressSlider: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
                         isDragging = true
-                        value = min(max(drag.location.x / w, 0), 1)
+                        if w > 0 {
+                            value = min(max(drag.location.x / w, 0), 1)
+                        }
                     }
                     .onEnded { _ in isDragging = false }
             )
             .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovering = h } }
         }
-        .frame(height: 8)
+        .frame(height: interactiveHeight)
     }
 }
 

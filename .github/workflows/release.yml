@@ -26,12 +26,16 @@ jobs:
       - name: Build Release
         run: |
           set -o pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Building version: $VERSION"
           xcodebuild \
             -project glMusic.xcodeproj \
             -scheme glMusic \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/glMusic-derived" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             CODE_SIGNING_ALLOWED=NO \
             build
 

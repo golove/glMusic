@@ -103,7 +103,9 @@ struct DailyRecommendView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 6)
-               
+                Divider()
+                    .padding(.horizontal, 24)
+                    .opacity(0.4)
             }
             .frame(height: 200)
             .background(.ultraThinMaterial)

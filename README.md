@@ -2,16 +2,16 @@
   <img src="public/logo.png" width="128" height="128" alt="glMusic Icon" />
 </p>
 
-<h1 align="center">glMusic (Rust Client for Windows & Linux)</h1>
+<h1 align="center">glMusic (Rust Client for Windows)</h1>
 
 <p align="center">
-  <strong>基于 Rust + Tauri 2.0 构建的现代原生高颜值网易云音乐客户端 (Windows & Linux)</strong><br>
+  <strong>基于 Rust + Tauri 2.0 构建的现代原生高颜值网易云音乐客户端 (Windows 专享优化版)</strong><br>
   传承 glMusic (macOS 原生版) 极致 Apple Music 视觉质感，全面集成 <code>ncm-api-rs v0.1.0</code> 原生 SDK 与智能换源解灰引擎。
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Release-v0.3.5-0071e3?style=flat-square" alt="Version" />
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-black?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078d4?style=flat-square&logo=windows" alt="Platform" />
   <img src="https://img.shields.io/badge/Language-Rust%202021%20%2F%20TypeScript-F05138?style=flat-square&logo=rust" alt="Language" />
   <img src="https://img.shields.io/badge/Framework-Tauri%202.0%20%2B%20Vue%203-0071e3?style=flat-square" alt="Framework" />
   <img src="https://img.shields.io/badge/API-ncm--api--rs%20v0.1.0-brightgreen?style=flat-square" alt="API" />
@@ -22,15 +22,16 @@
 
 ## 📖 项目简介
 
-本项目为 **glMusic** 的原生跨平台版本，专为 **Windows** 与 **Linux** 桌面系统量身定制。后端完全使用 **Rust** 编写，通过整合网易云音乐原生 Rust SDK **`ncm-api-rs` (v0.1.0)** 直接与网易云服务器加密直连通信，**彻底摆脱对外部 Node.js 服务的依赖**。
+本项目为 **glMusic** 的 Windows 原生轻量客户端工程（后续将另起独立分支支持 Linux）。后端完全使用 **Rust** 编写，通过整合网易云音乐原生 Rust SDK **`ncm-api-rs` (v0.1.0)** 直接与网易云服务器加密直连通信，**彻底摆脱对外部 Node.js 服务的依赖**。
 
-UI 界面严格复刻了 `glMusic` 原生版设计：
-- 🌆 **拟真 19 光斑城市夜景散景流光氛围背景 (Night City Bokeh Ambient)**：包含远景大光晕、中景柔球、带微亮光圈的清晰摄影光斑与近景晶莹亮点，伴随平滑微呼吸动画。
-- 💊 **悬浮胶囊播放条 (Floating Capsule PlayerBar)**：集成高品质封面微缩图、标题、歌手、全功能播放控制器、可拖拽进度条、音质自由切换 (SoundQualityType: 标准 / 极高 / 无损 / Hi-Res)、音量滑杆、歌词抽屉及播放队列。
-- 🎤 **Apple Music 风格全屏沉浸歌词 (Immersive LyricsView)**：高斯模糊封面背景、毫秒级歌词同步高亮、平滑跟随滚动、点击行即时跳转定位。
-- 🔓 **VIP 试听限制自动换源与解灰**：内置 GD 音乐台全曲 320k 匹配引擎，破解 VIP 30s/45s 试听限制与灰色歌曲播放。
+### ✨ Windows 专属优化体验：
+- 🪟 **沉浸式无边框磨砂窗口**：告别 Windows 传统白条标题栏，配合自定义顶部控制栏（历史前进/后退、实时播放状态、最小化/最大化/关闭按钮与双击最大化拖拽）。
+- 🎨 **极致 Windows 字体抗锯齿排版**：全面优化 ClearType 文本渲染，超细长半透明微光滚动条。
+- 🌆 **拟真 19 光斑城市夜景流光背景**：支持 GPU 硬件 3D 合成加速，提供“全效”、“轻量节能”、“极简暗黑”三档性能模式切换。
+- 🎤 **Apple Music 风格全屏沉浸歌词**：支持弹性缩放呼吸高亮、上下视野柔和渐隐，以及“译文对照”与“大字/标准”字号即时切换。
+- 💊 **悬浮胶囊播放条 (PlayerBar)**：全音质自由切换 (标准 / 极高 / 无损 / Hi-Res)、可点击歌手/专辑跳转详情页。
+- 🔓 **VIP 试听限制自动换源与解灰**：内置 GD 音乐台全曲 320k 匹配引擎，破解 VIP 30s/45s 试听限制。
 - 📱 **网易云官方二维码扫码登录**：支持手机端网易云音乐扫一扫登录，会话 Cookie 跨平台自动安全持久化存储。
-- 🧭 **全功能音乐内容板块**：发现音乐、每日推荐、歌单广场、排行榜、广播电台、全局音乐搜索、我喜欢的音乐及播放历史管理。
 
 ---
 

@@ -152,6 +152,8 @@ struct SongDetailResponse: Codable {
 struct LyricResponse: Codable {
     let lrc: LyricContent?
     let tlyric: LyricContent?
+    let klyric: LyricContent?
+    let yrc: LyricContent?
     let code: Int?
 }
 
@@ -159,13 +161,66 @@ struct LyricContent: Codable {
     let lyric: String?
 }
 
-// MARK: - Parsed Lyric Line
+// MARK: - Parsed Lyric Word & Line
+
+struct LyricWord: Identifiable, Equatable {
+    let id = UUID()
+    let time: TimeInterval      // 绝对开始时间 (秒)
+    let duration: TimeInterval  // 持续时长 (秒)
+    let text: String            // 单字/词文本
+}
 
 struct LyricLine: Identifiable, Equatable {
     let id = UUID()
     let time: TimeInterval
     let text: String
     var translation: String? = nil
+    var duration: TimeInterval = 0
+    var words: [LyricWord] = []
+
+    var isWordSynced: Bool {
+        !words.isEmpty
+    }
+
+    /// 根据当前播放时间计算精准高亮进度 (0.0 ~ 1.0)
+    func progress(at currentTime: TimeInterval) -> Double {
+        if isWordSynced {
+            guard !words.isEmpty else { return 0 }
+            let lineStart = words.first?.time ?? time
+            let lineEnd = (words.last?.time ?? time) + (words.last?.duration ?? duration)
+
+            if currentTime < lineStart { return 0.0 }
+            if currentTime >= lineEnd { return 1.0 }
+
+            var completedUnits: Double = 0
+            var totalUnits: Double = 0
+
+            for w in words {
+                let units = max(1.0, Double(w.text.count))
+                totalUnits += units
+
+                if currentTime <= w.time {
+                    // 尚未唱到
+                } else if currentTime >= w.time + w.duration {
+                    // 该字已经唱完
+                    completedUnits += units
+                } else {
+                    // 正在唱
+                    let p = (currentTime - w.time) / max(0.01, w.duration)
+                    completedUnits += units * min(1.0, max(0.0, p))
+                }
+            }
+
+            return totalUnits > 0 ? min(1.0, max(0.0, completedUnits / totalUnits)) : 0.0
+        } else {
+            // 普通 LRC 智能演唱时长估算
+            let lineStart = time
+            let lineDur = max(0.8, duration > 0 ? duration : 3.5)
+            if currentTime < lineStart { return 0.0 }
+            if currentTime >= lineStart + lineDur { return 1.0 }
+            return min(1.0, max(0.0, (currentTime - lineStart) / lineDur))
+        }
+    }
 }
 
 // MARK: - Playlist

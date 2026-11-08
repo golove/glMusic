@@ -96,6 +96,42 @@ enum AppTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 歌词高光柔和渐变色对 (淡化约 60%，融入通透亮白，呈现清澈柔和的高级感)
+    var lyricSoftColors: (primary: Color, secondary: Color) {
+        switch self {
+        case .sakura:
+            return (
+                Color(red: 0.98, green: 0.70, blue: 0.75),
+                Color(red: 0.99, green: 0.78, blue: 0.82)
+            )
+        case .mint:
+            return (
+                Color(red: 0.62, green: 0.89, blue: 0.80),
+                Color(red: 0.61, green: 0.88, blue: 0.93)
+            )
+        case .ocean:
+            return (
+                Color(red: 0.62, green: 0.86, blue: 0.96),
+                Color(red: 0.69, green: 0.80, blue: 0.98)
+            )
+        case .matcha:
+            return (
+                Color(red: 0.64, green: 0.86, blue: 0.72),
+                Color(red: 0.81, green: 0.92, blue: 0.64)
+            )
+        case .peach:
+            return (
+                Color(red: 0.99, green: 0.78, blue: 0.64),
+                Color(red: 0.99, green: 0.83, blue: 0.70)
+            )
+        case .lavender:
+            return (
+                Color(red: 0.82, green: 0.74, blue: 0.98),
+                Color(red: 0.87, green: 0.75, blue: 0.99)
+            )
+        }
+    }
+
     var systemIcon: String {
         switch self {
         case .sakura:   return "heart.fill"
@@ -148,6 +184,26 @@ final class ThemeManager {
 
     var highlightColor: Color {
         currentTheme.highlightColor
+    }
+
+    /// 歌词高光柔和渐变色对 (淡化约 60%)
+    var lyricSoftColors: (primary: Color, secondary: Color) {
+        currentTheme.lyricSoftColors
+    }
+
+    /// 歌词高光柔和渐变 (顶部高光亮白过渡到淡化约 60% 的主题淡彩色，极高通透感与辨识度)
+    var lyricSoftGradient: LinearGradient {
+        let softColors = currentTheme.lyricSoftColors
+        return LinearGradient(
+            stops: [
+                .init(color: .white, location: 0.0),
+                .init(color: .white.opacity(0.96), location: 0.35),
+                .init(color: softColors.primary, location: 0.75),
+                .init(color: softColors.secondary, location: 1.0)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     init() {

@@ -247,13 +247,19 @@ final class NetworkManager: @unchecked Sendable {
     // MARK: - Lyrics
 
     func lyrics(id: Int) async throws -> LyricResponse {
-        let cacheKey = "lyrics_\(id)"
+        let cacheKey = "lyrics_new_\(id)"
         if let cached: LyricResponse = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let res: LyricResponse = try await request("/lyric", params: ["id": "\(id)"])
-        await APICache.shared.set(cacheKey, value: res, ttl: 1800) // 歌词缓存30分钟
-        return res
+        do {
+            let res: LyricResponse = try await request("/lyric/new", params: ["id": "\(id)"])
+            await APICache.shared.set(cacheKey, value: res, ttl: 1800) // 歌词缓存30分钟
+            return res
+        } catch {
+            let fallback: LyricResponse = try await request("/lyric", params: ["id": "\(id)"])
+            await APICache.shared.set(cacheKey, value: fallback, ttl: 1800)
+            return fallback
+        }
     }
 
     // MARK: - Recommendations (带内存缓存)

@@ -13,6 +13,7 @@ struct PlayerBar: View {
     @Environment(ThemeManager.self) private var themeManager
     @Environment(LanguageManager.self) private var languageManager
     @State private var isHovering = false
+    @State private var lastVolume: Double = 0.5
 
     init(selection: Binding<String?>? = nil) {
         self._selection = selection ?? .constant(nil)
@@ -259,10 +260,24 @@ struct PlayerBar: View {
             AudioDevicePickerButton(style: .playerBar)
 
             HStack(spacing: 8) {
-                Image(systemName: volumeIcon)
-                    .font(.system(size: 18))
-                    .foregroundStyle(.secondary)
-//                    .frame(width: 14)
+                Button {
+                    if player.volume > 0 {
+                        lastVolume = player.volume
+                        player.volume = 0
+                    } else {
+                        player.volume = lastVolume > 0 ? lastVolume : 0.5
+                    }
+                } label: {
+                    Image(systemName: volumeIcon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.symbolEffect(.replace.byLayer))
+                        .animation(.smooth(duration: 0.2), value: volumeIcon)
+                        .frame(width: 22, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(player.volume == 0 ? "取消静音".localized : "静音".localized)
 
                 ProgressSlider(value: $player.volume, trackHeight: 3)
                     .frame(width: 76)

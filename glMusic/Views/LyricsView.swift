@@ -12,9 +12,12 @@ struct LyricsView: View {
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @Environment(LanguageManager.self) private var languageManager
+    private var styleManager = LyricsStyleManager.shared
     @State private var hoveredLineId: UUID?
     @State private var autoScroll = true
     @State private var lastVolume: Double = 0.5
+    @State private var isRightControlsHovered = false
+    @State private var isLeftReturnHovered = false
    
     init(selection: Binding<String?>? = nil) {
         self._selection = selection ?? .constant(nil)
@@ -65,13 +68,17 @@ struct LyricsView: View {
     private var topBarSection: some View {
         HStack {
             topPinnedBar
-                .opacity(0.66)
+                .opacity(isLeftReturnHovered ? 1.0 : 0.6)
+                .animation(.easeInOut(duration: 0.2), value: isLeftReturnHovered)
+                .onHover { isLeftReturnHovered = $0 }
                 .padding(.leading, 74)
 
             Spacer()
 
             AudioDevicePickerAndVolume
-//                .opacity(0.33)
+                .opacity(isRightControlsHovered ? 1.0 : 0.33)
+                .animation(.easeInOut(duration: 0.2), value: isRightControlsHovered)
+                .onHover { isRightControlsHovered = $0 }
                 .padding(.trailing, 24)
         }
         .frame(height: 36)
@@ -97,7 +104,6 @@ struct LyricsView: View {
             .contentShape(Circle())
         }
         .padding(.horizontal, 6)
-//        .padding(.top,-25)
         .buttonStyle(.plain)
         .keyboardShortcut(.escape, modifiers: [])
         .help("返回 (Esc)".localized)
@@ -107,7 +113,10 @@ struct LyricsView: View {
 
     private var AudioDevicePickerAndVolume: some View {
         @Bindable var player = player
-        return HStack(spacing: 8) {
+        return HStack(spacing: 12) {
+            // 歌词显示样式设置 (字号/对齐/景深/翻译)
+            LyricsStyleButton()
+
             // 选择播放设备 (放到音量调整前面)
             AudioDevicePickerButton(style: .lyrics)
 
@@ -131,7 +140,9 @@ struct LyricsView: View {
                     Image(systemName: volumeIcon)
                         .font(.system(size: 18))
                         .foregroundStyle(.white.opacity(0.8))
-                        .frame(width: 24)
+                        .contentTransition(.symbolEffect(.replace.byLayer))
+                        .animation(.smooth(duration: 0.2), value: volumeIcon)
+                        .frame(width: 22, alignment: .leading)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -139,7 +150,7 @@ struct LyricsView: View {
             }
             .frame(width: 130)
         }
-   
+        .contentShape(Rectangle())
     }
 
     private var volumeIcon: String {
@@ -379,15 +390,16 @@ struct LyricsView: View {
     private var rightLyricsSection: some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 14) {
+                LazyVStack(alignment: styleManager.alignment.horizontalAlignment, spacing: styleManager.fontSize.lineSpacing) {
                     if player.isLoadingLyrics {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
                             Text("正在加载歌词...".localized)
-                                .font(.system(size: 24))
+                                .font(.system(size: styleManager.fontSize.inactiveFontSize))
                                 .foregroundStyle(.white.opacity(0.6))
                         }
+                        .frame(maxWidth: .infinity, alignment: styleManager.alignment.frameAlignment)
                         .padding(.vertical, 40)
                     } else if player.lyrics.isEmpty {
                         VStack(spacing: 10) {
@@ -398,26 +410,64 @@ struct LyricsView: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.6))
                         }
+                        .frame(maxWidth: .infinity, alignment: styleManager.alignment.frameAlignment)
                         .padding(.vertical, 40)
                     } else {
                         ForEach(Array(player.lyrics.enumerated()), id: \.element.id) { index, line in
                             let isActive = index == player.currentLyricIndex
                             let isHovered = hoveredLineId == line.id
+                            let distance = abs(index - player.currentLyricIndex)
+                            let blurRadius: CGFloat = (!isActive && styleManager.isDepthBlurEnabled)
+                                ? min(CGFloat(distance) * 0.9, 2.5)
+                                : 0
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(line.text)
-                                    .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .medium))
-                                    .foregroundStyle(
-                                        isActive
-                                            ? Color.white
-                                            : (isHovered ? Color.white.opacity(0.85) : Color.white.opacity(0.35))
+                            // 逐字卡拉OK动效进度计算 (支持官方YRC逐字时间轴与智能演唱时长)
+                            let lineProgress = isActive ? line.progress(at: player.currentTime) : 0.0
+
+                            let font = Font.system(
+                                size: isActive ? styleManager.fontSize.activeFontSize : styleManager.fontSize.inactiveFontSize,
+                                weight: isActive ? .bold : .medium
+                            )
+
+                            VStack(alignment: styleManager.alignment.horizontalAlignment, spacing: 4) {
+                                if styleManager.animationMode == .karaoke {
+                                    KaraokeLyricLineView(
+                                        text: line.text,
+                                        isActive: isActive,
+                                        progress: lineProgress,
+                                        font: font,
+                                        textAlignment: styleManager.alignment.textAlignment,
+                                        inactiveColor: isHovered ? Color.white.opacity(0.85) : Color.white.opacity(0.35)
                                     )
-                                    .scaleEffect(isActive ? 1.02 : 1.0, anchor: .leading)
+                                    .scaleEffect(
+                                        isActive ? 1.025 : 1.0,
+                                        anchor: styleManager.alignment == .center ? .center : .leading
+                                    )
                                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isActive)
+                                } else {
+                                    // 经典聚光灯模式 (纯文字高亮，带柔和淡雅主题渐变色)
+                                    Text(line.text)
+                                        .font(font)
+                                        .multilineTextAlignment(styleManager.alignment.textAlignment)
+                                        .foregroundStyle(
+                                            isActive
+                                                ? AnyShapeStyle(themeManager.lyricSoftGradient)
+                                                : AnyShapeStyle(isHovered ? Color.white.opacity(0.85) : Color.white.opacity(0.35))
+                                        )
+                                        .scaleEffect(
+                                            isActive ? 1.02 : 1.0,
+                                            anchor: styleManager.alignment == .center ? .center : .leading
+                                        )
+                                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isActive)
+                                }
 
-                                if let trans = line.translation, !trans.isEmpty {
+                                if styleManager.isTranslationEnabled, let trans = line.translation, !trans.isEmpty {
                                     Text(trans)
-                                        .font(.system(size: isActive ? 20 : 18, weight: .medium))
+                                        .font(.system(
+                                            size: isActive ? styleManager.fontSize.activeTranslationSize : styleManager.fontSize.inactiveTranslationSize,
+                                            weight: .medium
+                                        ))
+                                        .multilineTextAlignment(styleManager.alignment.textAlignment)
                                         .foregroundStyle(
                                             isActive
                                                 ? Color.white.opacity(0.85)
@@ -425,8 +475,11 @@ struct LyricsView: View {
                                         )
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: styleManager.alignment.frameAlignment)
                             .id(line.id)
                             .contentShape(Rectangle())
+                            .blur(radius: blurRadius)
+                            .animation(.easeInOut(duration: 0.3), value: blurRadius)
                             .onHover { h in hoveredLineId = h ? line.id : nil }
                             .onTapGesture {
                                 player.seek(to: line.time)
@@ -435,9 +488,33 @@ struct LyricsView: View {
                         }
                     }
                 }
-                .padding(.top, 32)
-                .padding(.bottom, 48)
+                .padding(.top, 40)
+                .padding(.bottom, 60)
+                .padding(.horizontal, 24)
             }
+            .mask(
+                styleManager.isEdgeFadeEnabled
+                    ? AnyView(
+                        VStack(spacing: 0) {
+                            LinearGradient(
+                                colors: [.clear, .black],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 48)
+
+                            Color.black
+
+                            LinearGradient(
+                                colors: [.black, .clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 64)
+                        }
+                    )
+                    : AnyView(Color.black)
+            )
             .onChange(of: player.currentLyricIndex) {
                 if autoScroll && !player.lyrics.isEmpty && player.currentLyricIndex < player.lyrics.count {
                     let activeId = player.lyrics[player.currentLyricIndex].id

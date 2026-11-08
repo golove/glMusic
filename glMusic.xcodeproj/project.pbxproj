@@ -6,6 +6,10 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B5DFB61230A09D3C0012EA36 /* NeteaseCloudMusicAPI in Frameworks */ = {isa = PBXBuildFile; productRef = B5DFB61130A09D3C0012EA36 /* NeteaseCloudMusicAPI */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		B5CEC67D306682F800290625 /* glMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = glMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -21,8 +25,11 @@
 /* Begin PBXFrameworksBuildPhase section */
 		B5CEC67A306682F800290625 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				B5DFB61230A09D3C0012EA36 /* NeteaseCloudMusicAPI in Frameworks */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -60,6 +67,9 @@
 				B5CEC67F306682F800290625 /* glMusic */,
 			);
 			name = glMusic;
+			packageProductDependencies = (
+				B5DFB61130A09D3C0012EA36 /* NeteaseCloudMusicAPI */,
+			);
 			productName = glMusic;
 			productReference = B5CEC67D306682F800290625 /* glMusic.app */;
 			productType = "com.apple.product-type.application";
@@ -90,6 +100,9 @@
 			);
 			mainGroup = B5CEC674306682F800290625;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B5DFB61030A09D3C0012EA36 /* XCRemoteSwiftPackageReference "NeteaseCloudMusicAPI-Swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B5CEC67E306682F800290625 /* Products */;
 			projectDirPath = "";
@@ -323,6 +336,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B5DFB61030A09D3C0012EA36 /* XCRemoteSwiftPackageReference "NeteaseCloudMusicAPI-Swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Lincb522/NeteaseCloudMusicAPI-Swift.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B5DFB61130A09D3C0012EA36 /* NeteaseCloudMusicAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B5DFB61030A09D3C0012EA36 /* XCRemoteSwiftPackageReference "NeteaseCloudMusicAPI-Swift" */;
+			productName = NeteaseCloudMusicAPI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B5CEC675306682F800290625 /* Project object */;
 	validationLevel = 1;

@@ -3,9 +3,13 @@
 //  glMusic
 //
 //  Created by go love on 10/23/26.
+//  Updated to Native Swift SDK direct connection + VIP Smart Unblock.
 //
 
 import Foundation
+import AppKit
+import CoreImage
+import NeteaseCloudMusicAPI
 
 // MARK: - API Cache Layer
 
@@ -42,12 +46,35 @@ actor APICache {
     }
 }
 
-// MARK: - Network Manager
+// MARK: - Network Manager (原生直连 + 智能解灰)
 
 final class NetworkManager: @unchecked Sendable {
     static let shared = NetworkManager()
 
-    private let baseURL = "http://127.0.0.1:3000"
+    /// 官方原生 EAPI / WeAPI 直连客户端（无需本地 Node.js 3000 服务）
+    public let client: NCMClient
+
+    /// 第三方智能换源解灰管理器（解决 VIP 试听 30s/45s 限制及无版权灰色歌曲）
+    public let unblockManager: UnblockManager
+
+    /// 智能解灰总开关
+    public var autoUnblockEnabled: Bool = true
+
+    private init() {
+        self.client = NCMClient()
+        self.unblockManager = UnblockManager()
+
+        // 注册优质解灰音源（GD音乐台，支持全曲 320k 匹配）
+        self.unblockManager.register(ServerUnblockSource.gd(name: "GD音乐台"))
+
+        // 关闭 SDK 内部 autoUnblock，统一由 NetworkManager / PlayerManager 安全接管，避免 Cocoa 字典修改崩溃
+        self.client.autoUnblock = false
+
+        // 恢复保存的网易云 Cookie
+        if let savedCookie = UserDefaults.standard.string(forKey: "netease_cookie"), !savedCookie.isEmpty {
+            self.client.setCookie(savedCookie)
+        }
+    }
 
     // MARK: - Cache Invalidation
 
@@ -59,76 +86,29 @@ final class NetworkManager: @unchecked Sendable {
 
     var cookie: String? {
         get { UserDefaults.standard.string(forKey: "netease_cookie") }
-        set { UserDefaults.standard.set(newValue, forKey: "netease_cookie") }
+        set {
+            if let val = newValue, !val.isEmpty {
+                UserDefaults.standard.set(val, forKey: "netease_cookie")
+                client.setCookie(val)
+            } else {
+                UserDefaults.standard.removeObject(forKey: "netease_cookie")
+                client.setCookie("")
+            }
+        }
     }
 
     var isLoggedIn: Bool { cookie != nil && !cookie!.isEmpty }
 
     func logout() {
         cookie = nil
+        client.setCookie("")
         Task { await clearCache() }
     }
 
-    // MARK: - 通用请求（带重试 + 自动 Cookie + randomCNIP + 优雅错误处理）
+    // MARK: - 内部解码工具
 
-    private func request<T: Codable>(_ path: String, params: [String: String] = [:], maxRetries: Int = 1) async throws -> T {
-        var lastError: Error = APIError.serverError(statusCode: 500)
-        for attempt in 0...maxRetries {
-            do {
-                return try await executeRequest(path, params: params)
-            } catch let err as URLError where err.code == .cancelled {
-                throw err
-            } catch {
-                lastError = error
-                if attempt < maxRetries {
-                    try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
-                    continue
-                }
-            }
-        }
-        throw lastError
-    }
-
-    private func executeRequest<T: Codable>(_ path: String, params: [String: String] = [:]) async throws -> T {
-        guard var components = URLComponents(string: baseURL + path) else {
-            throw APIError.invalidURL
-        }
-        var items = params.map { URLQueryItem(name: $0.key, value: $0.value) }
-        items.append(URLQueryItem(name: "timestamp", value: "\(Int(Date().timeIntervalSince1970 * 1000))"))
-        items.append(URLQueryItem(name: "randomCNIP", value: "true"))
-        if let cookie = cookie {
-            items.append(URLQueryItem(name: "cookie", value: cookie))
-        }
-        components.queryItems = items
-
-        guard let url = components.url else { throw APIError.invalidURL }
-
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 15
-        if let cookie = cookie {
-            req.setValue(cookie, forHTTPHeaderField: "Cookie")
-        }
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: req)
-        } catch let urlErr as URLError {
-            if urlErr.code == .notConnectedToInternet || urlErr.code == .networkConnectionLost {
-                throw APIError.networkUnreachable
-            } else if urlErr.code == .timedOut {
-                throw APIError.timeout
-            }
-            throw urlErr
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.serverError(statusCode: -1)
-        }
-        guard (200...299).contains(http.statusCode) else {
-            throw APIError.serverError(statusCode: http.statusCode)
-        }
-
+    private func decodeResponse<T: Codable>(_ response: APIResponse) throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: response.body)
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
@@ -139,60 +119,94 @@ final class NetworkManager: @unchecked Sendable {
     // MARK: - 游客登录（获取基础 Cookie）
 
     func registerAnonymous() async throws {
-        struct AnonResponse: Codable { let cookie: String?; let code: Int? }
-        let r: AnonResponse = try await request("/register/anonimous")
-        if let c = r.cookie { cookie = c }
+        let resp = try await client.registerAnonimous()
+        if let c = resp.body["cookie"] as? String {
+            self.cookie = c
+        }
     }
 
     // MARK: - 二维码登录
 
     func getQRKey() async throws -> String {
-        let r: QRKeyResponse = try await request("/login/qr/key", params: ["noCookie": "true"])
-        guard let key = r.data?.unikey else { throw APIError.noData }
+        let resp = try await client.loginQrKey()
+        guard let key = (resp.body["data"] as? [String: Any])?["unikey"] as? String
+                ?? resp.body["unikey"] as? String else {
+            throw APIError.noData
+        }
         return key
     }
 
     func createQR(key: String) async throws -> String {
-        let r: QRCreateResponse = try await request("/login/qr/create", params: [
-            "key": key, "qrimg": "true", "noCookie": "true"
-        ])
-        guard let img = r.data?.qrimg else { throw APIError.noData }
-        return img
+        let resp = try await client.loginQrCreate(key: key, qrimg: true)
+        let dataDict = resp.body["data"] as? [String: Any] ?? resp.body
+
+        // 优先使用服务端返回的 base64 图片
+        if let qrimg = dataDict["qrimg"] as? String, !qrimg.isEmpty {
+            return qrimg
+        }
+
+        // 若仅返回 qrurl，本地通过 CoreImage 生成二维码 Base64
+        if let qrurl = dataDict["qrurl"] as? String,
+           let qrData = qrurl.data(using: .utf8),
+           let filter = CIFilter(name: "CIQRCodeGenerator") {
+            filter.setValue(qrData, forKey: "inputMessage")
+            filter.setValue("M", forKey: "inputCorrectionLevel")
+            if let ciImage = filter.outputImage {
+                let rep = NSCIImageRep(ciImage: ciImage.transformed(by: CGAffineTransform(scaleX: 8, y: 8)))
+                let nsImage = NSImage(size: rep.size)
+                nsImage.addRepresentation(rep)
+                if let tiff = nsImage.tiffRepresentation,
+                   let bitmap = NSBitmapImageRep(data: tiff),
+                   let png = bitmap.representation(using: .png, properties: [:]) {
+                    return "data:image/png;base64," + png.base64EncodedString()
+                }
+            }
+        }
+
+        throw APIError.noData
     }
 
     func checkQR(key: String) async throws -> QRCheckResponse {
-        try await request("/login/qr/check", params: ["key": key, "noCookie": "true"])
+        let resp = try await client.loginQrCheck(key: key)
+        let r: QRCheckResponse = try decodeResponse(resp)
+        if let c = r.cookie, !c.isEmpty {
+            self.cookie = c
+        }
+        return r
     }
 
     // MARK: - 短信验证码登录
 
     func sendCaptcha(phone: String) async throws {
-        struct R: Codable { let code: Int?; let data: Bool? }
-        let _: R = try await request("/captcha/sent", params: ["phone": phone])
+        _ = try await client.captchaSent(phone: phone)
     }
 
     func loginWithCaptcha(phone: String, captcha: String) async throws -> String? {
-        struct LoginResponse: Codable { let code: Int?; let cookie: String?; let message: String? }
-        let r: LoginResponse = try await request("/login/cellphone", params: [
-            "phone": phone, "captcha": captcha
-        ])
-        if let c = r.cookie { cookie = c }
-        return r.cookie
+        let resp = try await client.loginCellphone(phone: phone, captcha: captcha)
+        if let c = resp.body["cookie"] as? String {
+            self.cookie = c
+            return c
+        }
+        return nil
     }
 
     // MARK: - 登录状态
 
     func loginStatus() async throws -> UserProfile? {
-        let r: LoginStatusResponse = try await request("/login/status")
-        return r.data?.profile
+        let resp = try await client.loginStatus()
+        if let profileDict = resp.body["profile"] as? [String: Any]
+            ?? (resp.body["data"] as? [String: Any])?["profile"] as? [String: Any] {
+            let data = try JSONSerialization.data(withJSONObject: profileDict)
+            return try? JSONDecoder().decode(UserProfile.self, from: data)
+        }
+        return nil
     }
 
     // MARK: - Search
 
     func search(keywords: String, limit: Int = 30, offset: Int = 0) async throws -> [APISong] {
-        let r: SearchResponse = try await request("/cloudsearch", params: [
-            "keywords": keywords, "type": "1", "limit": "\(limit)", "offset": "\(offset)"
-        ])
+        let resp = try await client.cloudsearch(keywords: keywords, type: .single, limit: limit, offset: offset)
+        let r: SearchResponse = try decodeResponse(resp)
         return r.result?.songs ?? []
     }
 
@@ -201,25 +215,71 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [HotSearchItem] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: HotSearchResponse = try await request("/search/hot/detail")
+        let resp = try await client.searchHotDetail()
+        let r: HotSearchResponse = try decodeResponse(resp)
         let res = r.data ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300)
         return res
     }
 
-    // MARK: - Song URL（带 unblock 解锁灰色歌曲）
+    // MARK: - Song URL（直连解析 + 智能解灰，破解 VIP 30s/45s 试听限制）
 
     func songURL(id: Int, level: String = "exhigh") async throws -> String? {
-        let r: SongURLResponse = try await request("/song/url/v1", params: [
-            "id": "\(id)", "level": level, "unblock": "true"
-        ])
-        return normalizeAudioURL(r.data?.first?.url)
+        let qualityLevel: SoundQualityType
+        switch level {
+        case "standard": qualityLevel = .standard
+        case "lossless": qualityLevel = .lossless
+        case "hires": qualityLevel = .hires
+        default: qualityLevel = .exhigh
+        }
+
+        let resp = try await client.songUrlV1(ids: [id], level: qualityLevel)
+        var firstData: [String: Any]? = nil
+        if let dataList = resp.body["data"] as? [[String: Any]],
+           let first = dataList.first {
+            firstData = first
+        }
+
+        var rawUrlString = firstData?["url"] as? String ?? ""
+
+        // 检测是否为 VIP 试听片段或无可用链接
+        let freeTime = firstData?["freeTimeTrialPrivilege"] as? [String: Any]
+        let remainTime = freeTime?["remainTime"] as? Int ?? 0
+        let hasTrialInfo = firstData?["freeTrialInfo"] != nil && !(firstData?["freeTrialInfo"] is NSNull)
+        let isSnippet = (remainTime > 0) || hasTrialInfo || rawUrlString.isEmpty
+
+        // 智能解灰：如果检测到试听或空链接，使用 GD音乐台等音源匹配全曲完整音频
+        if isSnippet && autoUnblockEnabled {
+            #if DEBUG
+            print("🔓 [glMusic] 检测到 VIP 限制或试听片段 (id: \(id), remainTime: \(remainTime)s)，启动智能换源...")
+            #endif
+            if let unblocked = await unblockManager.match(id: id, quality: "320"), !unblocked.url.isEmpty {
+                #if DEBUG
+                print("🎉 [glMusic] 智能换源成功！已匹配全曲 320k 完整音源: \(unblocked.platform)")
+                #endif
+                rawUrlString = unblocked.url
+            }
+        }
+
+        // 回退机制：若仍为空，尝试标准码率 songUrl
+        if rawUrlString.isEmpty {
+            if let fallbackResp = try? await client.songUrl(ids: [id], br: 320000),
+               let dataList = fallbackResp.body["data"] as? [[String: Any]],
+               let first = dataList.first,
+               let fallbackUrl = first["url"] as? String, !fallbackUrl.isEmpty {
+                rawUrlString = fallbackUrl
+            }
+        }
+
+        return normalizeAudioURL(rawUrlString)
     }
 
-    /// 灰色歌曲直接获取链接（UnblockNeteaseMusic）
+    /// 灰色歌曲直接获取链接（GD音乐台等音源匹配）
     func songURLMatch(id: Int) async throws -> String? {
-        let r: SongURLResponse = try await request("/song/url/match", params: ["id": "\(id)"])
-        return normalizeAudioURL(r.data?.first?.url)
+        if let unblocked = await unblockManager.match(id: id, quality: "320"), !unblocked.url.isEmpty {
+            return normalizeAudioURL(unblocked.url)
+        }
+        return nil
     }
 
     /// 将经过验证支持 HTTPS 的音频域名升级为 https://，以符合系统 ATS 安全策略
@@ -238,9 +298,8 @@ final class NetworkManager: @unchecked Sendable {
 
     func songDetail(ids: [Int]) async throws -> [APISong] {
         guard !ids.isEmpty else { return [] }
-        let r: SongDetailResponse = try await request("/song/detail", params: [
-            "ids": ids.map(String.init).joined(separator: ",")
-        ])
+        let resp = try await client.songDetail(ids: ids)
+        let r: SongDetailResponse = try decodeResponse(resp)
         return r.songs ?? []
     }
 
@@ -252,11 +311,13 @@ final class NetworkManager: @unchecked Sendable {
             return cached
         }
         do {
-            let res: LyricResponse = try await request("/lyric/new", params: ["id": "\(id)"])
+            let resp = try await client.lyricNew(id: id)
+            let res: LyricResponse = try decodeResponse(resp)
             await APICache.shared.set(cacheKey, value: res, ttl: 1800) // 歌词缓存30分钟
             return res
         } catch {
-            let fallback: LyricResponse = try await request("/lyric", params: ["id": "\(id)"])
+            let fallbackResp = try await client.lyric(id: id)
+            let fallback: LyricResponse = try decodeResponse(fallbackResp)
             await APICache.shared.set(cacheKey, value: fallback, ttl: 1800)
             return fallback
         }
@@ -269,7 +330,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: PersonalizedResponse = try await request("/personalized", params: ["limit": "\(limit)"])
+        let resp = try await client.personalized(limit: limit)
+        let r: PersonalizedResponse = try decodeResponse(resp)
         let res = r.result ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300) // 缓存5分钟
         return res
@@ -284,11 +346,8 @@ final class NetworkManager: @unchecked Sendable {
                 return cached
             }
             // 网易云官方歌单账号 (UID: 1463586082 为云音乐官方歌单)
-            let r: UserPlaylistResponse = try await request("/user/playlist", params: [
-                "uid": "1463586082",
-                "limit": "\(limit)",
-                "offset": "\(offset)"
-            ])
+            let resp = try await client.userPlaylist(uid: 1463586082, limit: limit, offset: offset)
+            let r: UserPlaylistResponse = try decodeResponse(resp)
             var res = r.playlist ?? []
             res = res.filter { $0.id != 0 }
             await APICache.shared.set(cacheKey, value: res, ttl: 300)
@@ -299,11 +358,8 @@ final class NetworkManager: @unchecked Sendable {
                 return cached
             }
             // 分类歌单从 /top/playlist 获取并严格过滤只保留官方歌单
-            let r: TopPlaylistResponse = try await request("/top/playlist", params: [
-                "cat": cat,
-                "limit": "\(max(limit, 50))",
-                "offset": "\(offset)"
-            ])
+            let resp = try await client.topPlaylist(cat: cat, limit: max(limit, 50), offset: offset)
+            let r: TopPlaylistResponse = try decodeResponse(resp)
             let list = r.playlists ?? []
             let res = list.filter { $0.isOfficial }
             await APICache.shared.set(cacheKey, value: res, ttl: 300)
@@ -316,7 +372,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIPlaylistTag] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: PlaylistHotTagsResponse = try await request("/playlist/hot")
+        let resp = try await client.playlistHot()
+        let r: PlaylistHotTagsResponse = try decodeResponse(resp)
         let res = r.tags ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
@@ -327,7 +384,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [NewSongWrapper] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: PersonalizedNewSongResponse = try await request("/personalized/newsong")
+        let resp = try await client.personalizedNewsong(limit: 10)
+        let r: PersonalizedNewSongResponse = try decodeResponse(resp)
         let res = r.result ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300) // 缓存5分钟
         return res
@@ -340,7 +398,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIBanner] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: BannerResponse = try await request("/banner", params: ["type": "0"])
+        let resp = try await client.banner(type: .pc)
+        let r: BannerResponse = try decodeResponse(resp)
         let res = r.banners ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300) // 缓存5分钟
         return res
@@ -353,7 +412,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: APIPlaylist = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: PlaylistDetailFullResponse = try await request("/playlist/detail", params: ["id": "\(id)"])
+        let resp = try await client.playlistDetail(id: id)
+        let r: PlaylistDetailFullResponse = try decodeResponse(resp)
         if let pl = r.playlist {
             await APICache.shared.set(cacheKey, value: pl, ttl: 300)
         }
@@ -365,9 +425,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APISong] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: PlaylistTracksResponse = try await request("/playlist/track/all", params: [
-            "id": "\(id)", "limit": "\(limit)", "offset": "\(offset)"
-        ])
+        let resp = try await client.playlistTrackAll(id: id, limit: limit, offset: offset)
+        let r: PlaylistTracksResponse = try decodeResponse(resp)
         let res = r.songs ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300)
         return res
@@ -380,7 +439,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIArtistDetail] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: TopArtistsResponse = try await request("/top/artists", params: ["limit": "\(limit)"])
+        let resp = try await client.topArtists(limit: limit)
+        let r: TopArtistsResponse = try decodeResponse(resp)
         let res = r.artists ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 600) // 缓存10分钟
         return res
@@ -391,7 +451,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: ArtistDetailResponse = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let res: ArtistDetailResponse = try await request("/artists", params: ["id": "\(id)"])
+        let resp = try await client.artists(id: id)
+        let res: ArtistDetailResponse = try decodeResponse(resp)
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
     }
@@ -401,7 +462,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIAlbumDetail] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: ArtistAlbumResponse = try await request("/artist/album", params: ["id": "\(id)", "limit": "\(limit)"])
+        let resp = try await client.artistAlbum(id: id, limit: limit)
+        let r: ArtistAlbumResponse = try decodeResponse(resp)
         let res = r.hotAlbums ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
@@ -414,7 +476,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APISong] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DailySongsResponse = try await request("/recommend/songs")
+        let resp = try await client.recommendSongs()
+        let r: DailySongsResponse = try decodeResponse(resp)
         let res = r.data?.dailySongs ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
@@ -423,14 +486,14 @@ final class NetworkManager: @unchecked Sendable {
     // MARK: - Like Song
 
     func likeSong(id: Int, like: Bool = true) async throws -> Bool {
-        let r: BaseAPIResponse = try await request("/like", params: [
-            "id": "\(id)", "like": like ? "true" : "false"
-        ])
+        let resp = try await client.like(id: id, like: like)
+        let r: BaseAPIResponse = try decodeResponse(resp)
         return r.code == 200
     }
 
     func likeList(uid: Int) async throws -> [Int] {
-        let r: LikeListResponse = try await request("/likelist", params: ["uid": "\(uid)"])
+        let resp = try await client.likelist(uid: uid)
+        let r: LikeListResponse = try decodeResponse(resp)
         return r.ids ?? []
     }
 
@@ -441,9 +504,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIAlbumDetail] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: NewAlbumsResponse = try await request("/album/new", params: [
-            "area": "ZH", "limit": "\(limit)"
-        ])
+        let resp = try await client.albumNew(area: .zh, limit: limit)
+        let r: NewAlbumsResponse = try decodeResponse(resp)
         let res = r.albums ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
@@ -454,7 +516,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: AlbumDetailResponse = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let res: AlbumDetailResponse = try await request("/album", params: ["id": "\(id)"])
+        let resp = try await client.album(id: id)
+        let res: AlbumDetailResponse = try decodeResponse(resp)
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
     }
@@ -466,7 +529,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: ToplistResponse = try await request("/toplist")
+        let resp = try await client.toplist()
+        let r: ToplistResponse = try decodeResponse(resp)
         let res = r.list ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
@@ -479,9 +543,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIPlaylist] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: UserPlaylistResponse = try await request("/user/playlist", params: [
-            "uid": "\(uid)", "limit": "\(limit)"
-        ])
+        let resp = try await client.userPlaylist(uid: uid, limit: limit)
+        let r: UserPlaylistResponse = try decodeResponse(resp)
         let res = r.playlist ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 180)
         return res
@@ -494,7 +557,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIDJBanner] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DJBannerResponse = try await request("/dj/banner")
+        let resp = try await client.djBanner()
+        let r: DJBannerResponse = try decodeResponse(resp)
         let res = r.data ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300)
         return res
@@ -505,7 +569,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIDJRadio] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DJRecommendResponse = try await request("/dj/recommend")
+        let resp = try await client.djRecommend()
+        let r: DJRecommendResponse = try decodeResponse(resp)
         let res = r.djRadios ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300)
         return res
@@ -516,7 +581,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIDJToplistItem] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DJProgramToplistResponse = try await request("/dj/program/toplist", params: ["limit": "\(limit)"])
+        let resp = try await client.djProgramToplist(limit: limit)
+        let r: DJProgramToplistResponse = try decodeResponse(resp)
         let res = r.toplist ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300)
         return res
@@ -527,7 +593,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIDJCategory] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DJCategoryResponse = try await request("/dj/catelist")
+        let resp = try await client.djCatelist()
+        let r: DJCategoryResponse = try decodeResponse(resp)
         let res = r.categories ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 1800)
         return res
@@ -538,7 +605,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIDJRadio] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DJRecommendResponse = try await request("/dj/recommend/type", params: ["type": "\(typeId)"])
+        let resp = try await client.djRecommendType(cateId: typeId)
+        let r: DJRecommendResponse = try decodeResponse(resp)
         let res = r.djRadios ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300)
         return res
@@ -549,7 +617,8 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: APIDJRadio = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DJDetailResponse = try await request("/dj/detail", params: ["rid": "\(rid)"])
+        let resp = try await client.djDetail(rid: rid)
+        let r: DJDetailResponse = try decodeResponse(resp)
         if let d = r.data {
             await APICache.shared.set(cacheKey, value: d, ttl: 300)
         }
@@ -561,16 +630,16 @@ final class NetworkManager: @unchecked Sendable {
         if !forceRefresh, let cached: [APIDJProgram] = await APICache.shared.get(cacheKey) {
             return cached
         }
-        let r: DJProgramResponse = try await request("/dj/program", params: [
-            "rid": "\(rid)", "limit": "\(limit)", "offset": "\(offset)"
-        ])
+        let resp = try await client.djProgram(rid: rid, limit: limit, offset: offset)
+        let r: DJProgramResponse = try decodeResponse(resp)
         let res = r.programs ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 300)
         return res
     }
 
     func djProgramDetail(id: Int) async throws -> APIDJProgram? {
-        let r: DJProgramDetailResponse = try await request("/dj/program/detail", params: ["id": "\(id)"])
+        let resp = try await client.djProgramDetail(id: id)
+        let r: DJProgramDetailResponse = try decodeResponse(resp)
         return r.program
     }
 
@@ -591,7 +660,7 @@ final class NetworkManager: @unchecked Sendable {
             case .serverError(let code):
                 return "服务器响应异常 (状态码: \(code))"
             case .networkUnreachable:
-                return "网络连接失败，请确认本地网易云 API 服务 (127.0.0.1:3000) 已启动"
+                return "网络连接失败，请检查您的网络连接"
             case .timeout:
                 return "网络请求超时，请检查服务响应"
             case .decodingFailed:

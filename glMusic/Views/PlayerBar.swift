@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import NeteaseCloudMusicAPI
 
 struct PlayerBar: View {
     @Binding var selection: String?
@@ -100,7 +101,7 @@ struct PlayerBar: View {
 //        var isHover = false
         return VStack(alignment:.leading,spacing:0) {
            
-            HStack{
+            HStack(spacing:8){
                 if let song = player.currentSong {
                     // Album art from API
                     
@@ -164,12 +165,44 @@ struct PlayerBar: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-//                    Spacer()
+
+                    // MARK: - 音质选择 (SoundQualityType)
+                    Menu {
+                        ForEach(SoundQualityType.allCases, id: \.self) { quality in
+                            Button {
+                                player.soundQuality = quality
+                            } label: {
+                                HStack {
+                                    Text(quality.displayName)
+                                    if player.soundQuality == quality {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Text(player.soundQuality.shortBadge)
+                            .font(.system(size: 13, weight: .regular))
+                            .lineLimit(1)
+                            .padding(.horizontal, 4.5)
+                            .padding(.vertical, 1.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3.5)
+                                    .stroke(themeManager.accentColor.opacity(0.85), lineWidth: 0.8)
+                                    .background(RoundedRectangle(cornerRadius: 3.5).fill(themeManager.accentColor.opacity(0.12)))
+                            )
+                            .foregroundStyle(themeManager.accentColor)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("音质选择：当前为 \(player.soundQuality.displayName)".localized)
+
                     Button {
                         player.toggleLike(for: song)
                     } label: {
                         Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
-                            .font(.system(size: 13))
+                            .font(.system(size: 16))
                             .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
                     }
                     .frame(width: 18, height: 18)
@@ -177,7 +210,7 @@ struct PlayerBar: View {
                     .help((player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌").localized)
 
                     // 下载此歌曲
-                    DownloadButton(song: song, iconSize: 13)
+                    DownloadButton(song: song, iconSize: 16)
                         .frame(width: 18, height: 18)
 
                   

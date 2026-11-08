@@ -8,6 +8,7 @@
 import SwiftUI
 import AVFoundation
 import MediaPlayer
+import NeteaseCloudMusicAPI
 
 @MainActor
 @Observable
@@ -23,6 +24,16 @@ final class PlayerManager {
         didSet {
             player.volume = Float(volume)
             UserDefaults.standard.set(volume, forKey: "player_volume")
+        }
+    }
+    var soundQuality: SoundQualityType = .exhigh {
+        didSet {
+            UserDefaults.standard.set(soundQuality.rawValue, forKey: "player_sound_quality")
+            if let song = currentSong, isPlaying {
+                Task {
+                    await reloadCurrentSongWithNewQuality()
+                }
+            }
         }
     }
     var isShuffled: Bool = false
@@ -78,6 +89,12 @@ final class PlayerManager {
             volume = savedVol
         }
         player.volume = Float(volume)
+
+        if let savedQuality = UserDefaults.standard.string(forKey: "player_sound_quality"),
+           let quality = SoundQualityType(rawValue: savedQuality) {
+            self.soundQuality = quality
+        }
+
         setupTimeObserver()
         setupEndObserver()
         setupRemoteCommands()
@@ -166,10 +183,10 @@ final class PlayerManager {
 
         // 3. 走网络流媒体加载
         do {
-            // 尝试 standard → exhigh 两种品质
-            var urlStr = try await NetworkManager.shared.songURL(id: songId, level: "standard")
+            // 尝试当前设定的音质
+            var urlStr = try await NetworkManager.shared.songURL(id: songId, level: soundQuality.rawValue)
             if urlStr == nil || urlStr?.isEmpty == true {
-                urlStr = try await NetworkManager.shared.songURL(id: songId, level: "exhigh")
+                urlStr = try await NetworkManager.shared.songURL(id: songId, level: "standard")
             }
 
             // 灰色歌曲兜底：使用 UnblockNeteaseMusic 匹配
@@ -786,5 +803,83 @@ final class PlayerManager {
         let m = Int(t) / 60
         let s = Int(t) % 60
         return String(format: "%d:%02d", m, s)
+    }
+
+    // MARK: - 音质即时无缝切换重载
+
+    func reloadCurrentSongWithNewQuality() async {
+        guard let song = currentSong, song.id > 0 else { return }
+        let currentPos = currentTime
+        let wasPlaying = isPlaying
+        isLoading = true
+        do {
+            var urlStr = try await NetworkManager.shared.songURL(id: song.id, level: soundQuality.rawValue)
+            if urlStr == nil || urlStr?.isEmpty == true {
+                urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "standard")
+            }
+            if urlStr == nil || urlStr?.isEmpty == true {
+                urlStr = try await NetworkManager.shared.songURLMatch(id: song.id)
+            }
+
+            guard let finalUrl = urlStr, let url = URL(string: finalUrl) else {
+                isLoading = false
+                return
+            }
+
+            let item = AVPlayerItem(url: url)
+            itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if observedItem.status == .failed {
+                        let errMsg = observedItem.error?.localizedDescription ?? "未知错误"
+                        print("❌ 音频加载失败: \(errMsg)")
+                        self.isPlaying = false
+                        self.isLoading = false
+                        self.updateNowPlaying()
+                    }
+                }
+            }
+            player.replaceCurrentItem(with: item)
+            if currentPos > 0 {
+                await player.seek(to: CMTime(seconds: currentPos, preferredTimescale: 600))
+            }
+            if wasPlaying {
+                player.play()
+                isPlaying = true
+            }
+            isLoading = false
+            updateNowPlaying()
+        } catch {
+            print("❌ 切换音质重新加载失败: \(error)")
+            isLoading = false
+        }
+    }
+}
+
+// MARK: - SoundQualityType 扩展展示
+
+extension SoundQualityType {
+    public var displayName: String {
+        switch self {
+        case .standard: return "标准 (128K)".localized
+        case .exhigh:   return "极高 (320K)".localized
+        case .lossless: return "无损 (FLAC)".localized
+        case .hires:    return "Hi-Res".localized
+        case .jyeffect: return "高清环绕声".localized
+        case .sky:      return "沉浸环绕声".localized
+        case .jymaster: return "超清母带".localized
+        }
+    }
+
+    public var shortBadge: String {
+        switch self {
+        case .standard: return "标准"
+        case .exhigh:   return "极高"
+        case .lossless: return "无损"
+        case .hires:    return "Hi-Res"
+        case .jyeffect: return "环绕声"
+        case .sky:      return "沉浸声"
+        case .jymaster: return "母带"
+        }
     }
 }

@@ -12,6 +12,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(LanguageManager.self) private var languageManager
     @State private var selection: String? = "home"
     @State private var navigationStack: [String] = []
     @State private var isNavigatingBack = false

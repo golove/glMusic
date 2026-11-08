@@ -128,6 +128,7 @@ final class LanguageManager {
 
     /// 多语言检索核心方法
     func localized(_ key: String, defaultValue: String? = nil) -> String {
+        _ = currentLanguage // 触发 Swift Observation 依赖注册，任何调用 .localized 的视图都能在语言切换时自动更新
         let result = bundle.localizedString(forKey: key, value: defaultValue, table: nil)
         if result == key, let defaultValue = defaultValue {
             return defaultValue

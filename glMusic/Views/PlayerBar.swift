@@ -11,6 +11,7 @@ struct PlayerBar: View {
     @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(LanguageManager.self) private var languageManager
     @State private var isHovering = false
 
     init(selection: Binding<String?>? = nil) {
@@ -21,7 +22,7 @@ struct PlayerBar: View {
         HStack{
             // MARK: - Left · Song Info
             songInfoSection
-                .frame(width: 150, alignment: .leading)
+                .frame(width: 155, alignment: .leading)
 
             Spacer(minLength: 8)
 
@@ -32,7 +33,7 @@ struct PlayerBar: View {
 
             // MARK: - Right · Volume + Extras
             extrasSection
-                .frame(width: 150, alignment: .trailing)
+                .frame(width: 175, alignment: .trailing)
         }
         .frame(height: 42)
         .padding(.horizontal, 18)
@@ -162,7 +163,7 @@ struct PlayerBar: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-                    Spacer()
+//                    Spacer()
                     Button {
                         player.toggleLike(for: song)
                     } label: {
@@ -170,13 +171,13 @@ struct PlayerBar: View {
                             .font(.system(size: 13))
                             .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
                     }
-                    .frame(width: 28, height: 28)
+                    .frame(width: 18, height: 18)
                     .buttonStyle(.plain)
                     .help((player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌").localized)
 
                     // 下载此歌曲
                     DownloadButton(song: song, iconSize: 13)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 18, height: 18)
 
                   
                     
@@ -228,7 +229,7 @@ struct PlayerBar: View {
     private var extrasSection: some View {
         @Bindable var player = player
 
-        return HStack(spacing: 14) {
+        return HStack(spacing: 10) {
 //            Button {
 //                withAnimation(.easeInOut(duration: 0.25)) {
 //                    player.isShowingLyrics.toggle()
@@ -245,7 +246,7 @@ struct PlayerBar: View {
                 player.isShowingQueue.toggle()
             } label: {
                 Image(systemName: player.isShowingQueue ? "list.bullet.rectangle.fill" : "list.bullet")
-                    .font(.system(size: 13))
+                    .font(.system(size: 18))
                     .foregroundStyle(player.isShowingQueue ? themeManager.accentColor : .secondary)
             }
             .buttonStyle(.plain)
@@ -254,14 +255,17 @@ struct PlayerBar: View {
                 QueueView()
             }
 
+            // 选择播放设备 (放到音量调整前面)
+            AudioDevicePickerButton(style: .playerBar)
+
             HStack(spacing: 8) {
                 Image(systemName: volumeIcon)
-                    .font(.system(size: 11))
+                    .font(.system(size: 18))
                     .foregroundStyle(.secondary)
-                    .frame(width: 14)
+//                    .frame(width: 14)
 
                 ProgressSlider(value: $player.volume, trackHeight: 3)
-                    .frame(width: 96)
+                    .frame(width: 76)
             }
         }
     }

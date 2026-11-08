@@ -25,7 +25,6 @@ struct glMusicApp: App {
                 .environment(themeManager)
                 .environment(languageManager)
                 .environment(\.locale, languageManager.currentLocale)
-                .id(languageManager.currentLanguage.rawValue)
                 .tint(themeManager.accentColor)
                 .environment(\.defaultMinListRowHeight, 36)
                 .task {

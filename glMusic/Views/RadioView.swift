@@ -306,10 +306,17 @@ struct RadioBannerCard: View {
                 }
 
                 ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: URL(string: banner.pic ?? "")) { phase in
+                    AsyncImage(url: URL(string: banner.displayPic ?? banner.pic?.httpsURL ?? "")) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().aspectRatio(contentMode: .fill)
+                        case .empty:
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.primary.opacity(0.05))
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
                         default:
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(.quaternary)
@@ -472,7 +479,7 @@ struct RadioTopProgramRow: View {
 
             // 封面与播放悬停
             ZStack {
-                AsyncImage(url: URL(string: program.coverUrl ?? "")) { phase in
+                AsyncImage(url: URL(string: program.displayCover ?? program.coverUrl?.httpsURL ?? "")) { phase in
                     if let img = phase.image {
                         img.resizable().aspectRatio(contentMode: .fill)
                     } else {

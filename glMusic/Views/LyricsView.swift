@@ -11,6 +11,7 @@ struct LyricsView: View {
     @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(LanguageManager.self) private var languageManager
     @State private var hoveredLineId: UUID?
     @State private var autoScroll = true
 
@@ -75,14 +76,16 @@ struct LyricsView: View {
 
                             HStack {
                                 topPinnedBar
-                                    .padding(.top,-90)
+                                    .padding(.top,-42)
+                                    .padding(.leading, 74)
                                 Spacer()
+                                AudioDevicePickerAndVolume
+                                    .padding(.top,0)
                             }
+                            .frame(width: .infinity,height: 30)
+//                            .background(Color.yellow)
                         }
-                    
-                    .padding(.top,60)
-                        .padding(.horizontal, 74)
-                
+
 
                 
             }
@@ -92,6 +95,37 @@ struct LyricsView: View {
     }
 
     // MARK: - Background Artwork
+    
+    
+    private var AudioDevicePickerAndVolume:some View{
+        @Bindable var player = player
+        return HStack(spacing:8){
+            // 选择播放设备 (放到音量调整前面)
+            AudioDevicePickerButton(style: .lyrics)
+
+            HStack(spacing: 8) {
+                
+//                    .frame(width: 14)
+
+                ProgressSlider(value: $player.volume, trackHeight: 6)
+                    .frame(width: 96)
+                 Image(systemName: volumeIcon)
+                     .font(.system(size: 18))
+                     .foregroundStyle(.secondary)
+                     .frame(width: 24)
+             }.frame(width: 130)
+        }.padding(.horizontal,24)
+
+        
+       
+    }
+    
+    private var volumeIcon: String {
+        if player.volume == 0    { return "speaker.slash.fill" }
+        if player.volume < 0.33  { return "speaker.wave.1.fill" }
+        if player.volume < 0.66  { return "speaker.wave.2.fill" }
+        return "speaker.wave.3.fill"
+    }
 
     private var backgroundArtwork: some View {
         GeometryReader { proxy in
@@ -183,12 +217,16 @@ struct LyricsView: View {
 
                 // 歌曲信息
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .center, spacing: 6) {
+                    HStack(alignment: .center, spacing: 8) {
                         Text(song.name)
                             .font(.system(size: 24, weight: .medium))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                         Spacer()
+
+                        // 选择播放设备 (放到喜欢按钮前面)
+//                        AudioDevicePickerButton(style: .lyrics)
+
                         Button {
                             player.toggleLike(for: song)
                         } label: {
@@ -303,7 +341,7 @@ struct LyricsView: View {
         .frame(width: coverSize + 120)
         .frame(maxHeight: .infinity)
         .padding(.bottom, 20)
-//        .padding(.horizontal,20)
+        .padding(.leading,96 * (320 / coverSize))
 //        .background(Color.pink)
 //        .frame(width: leftColumnWidth+90,alignment: .trailing)
 

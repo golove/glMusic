@@ -53,11 +53,8 @@ struct WindowToolbarAccessor: NSViewRepresentable {
 
         // 查找底层 NSSplitView 与 NSSplitViewController 并固定侧边栏尺寸与禁用拖拽光标
         if let splitView = findSplitView(in: window.contentView) {
-            // 1. 将 splitView 动态归类为 LockedSplitView，彻底清除分界线处调整尺寸的光标 (resizeLeftRight) 与拖拽跟踪
-            if !(splitView is LockedSplitView) {
-                object_setClass(splitView, LockedSplitView.self)
-                window.invalidateCursorRects(for: splitView)
-            }
+            // 1. 锁定 splitView 分界线与调整光标（通过运行时方法安全拦截，绝不调用 object_setClass，确保 KVO 机制完整无损）
+            SplitViewDividerLocker.shared.lock(splitView)
 
             // 2. 锁定 NSSplitViewController 的 sidebarItem 尺寸与禁止折叠
             let splitVC = (splitView.delegate as? NSSplitViewController) ?? findSplitViewController(in: window.contentViewController)
@@ -107,38 +104,117 @@ struct WindowToolbarAccessor: NSViewRepresentable {
     }
 }
 
-/// 自定义 NSSplitView 子类：彻底消除分界线处的光标变形 (resizeLeftRight) 与拖动改变宽度行为
-private final class LockedSplitView: NSSplitView {
-    override func resetCursorRects() {
-        // 空实现：不向系统注册任何分栏调整光标，使鼠标在分界线上保持正常箭头指针
+/// 全局 NSSplitView 分界线锁定器：彻底消除分界线处的光标变形 (resizeLeftRight) 与拖动改变宽度行为，同时完全不改变对象类名（保持 KVO 机制完整无损）
+final class SplitViewDividerLocker {
+    static let shared = SplitViewDividerLocker()
+    private var isSwizzled = false
+    private static var lockedKey: UInt8 = 0
+
+    func lock(_ splitView: NSSplitView) {
+        objc_setAssociatedObject(splitView, &SplitViewDividerLocker.lockedKey, true, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        swizzleIfNeeded()
+        splitView.window?.invalidateCursorRects(for: splitView)
     }
 
-    override func cursorUpdate(with event: NSEvent) {
-        NSCursor.arrow.set()
+    static func isLocked(_ splitView: NSSplitView) -> Bool {
+        return (objc_getAssociatedObject(splitView, &SplitViewDividerLocker.lockedKey) as? Bool) ?? false
     }
 
-    @objc func _cursorOfDividerAtLogicalIndex(_ index: Int) -> NSCursor? {
-        return nil
-    }
+    private func swizzleIfNeeded() {
+        guard !isSwizzled else { return }
+        isSwizzled = true
 
-    @objc func _cursorOfDividerAtIndex(_ index: Int, position: Double, dragLimits: Any) -> NSCursor? {
-        return nil
-    }
+        let cls = NSSplitView.self
 
-    @objc func cursorRectForDividerAtIndex(_ index: Int) -> NSRect {
-        return .zero
-    }
+        // 1. cursorRectForDividerAtIndex: 返回 .zero，系统不为分界线注册任何调整尺寸的光标感应区
+        let sCursorRect = NSSelectorFromString("cursorRectForDividerAtIndex:")
+        if let m = class_getInstanceMethod(cls, sCursorRect) {
+            let origIMP = method_getImplementation(m)
+            typealias OrigFn = @convention(c) (AnyObject, Selector, Int) -> NSRect
+            let block: @convention(block) (AnyObject, Int) -> NSRect = { obj, index in
+                if let sv = obj as? NSSplitView, SplitViewDividerLocker.isLocked(sv) {
+                    return .zero
+                }
+                let fn = unsafeBitCast(origIMP, to: OrigFn.self)
+                return fn(obj, sCursorRect, index)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
 
-    @objc func _effectiveFrameForDrawnFrame(_ drawnFrame: NSRect, ofDividerAtIndex index: Int) -> NSRect {
-        return .zero
-    }
+        // 2. _cursorOfDividerAtLogicalIndex: 返回 nil，避免分界线显示左右拖拽双向光标
+        let sCursor = NSSelectorFromString("_cursorOfDividerAtLogicalIndex:")
+        if let m = class_getInstanceMethod(cls, sCursor) {
+            let origIMP = method_getImplementation(m)
+            typealias OrigFn = @convention(c) (AnyObject, Selector, Int) -> AnyObject?
+            let block: @convention(block) (AnyObject, Int) -> AnyObject? = { obj, index in
+                if let sv = obj as? NSSplitView, SplitViewDividerLocker.isLocked(sv) {
+                    return nil
+                }
+                let fn = unsafeBitCast(origIMP, to: OrigFn.self)
+                return fn(obj, sCursor, index)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
 
-    @objc func _indexOfDividerForLocation(_ location: NSPoint, andReturnFrame frame: UnsafeMutablePointer<NSRect>?) -> Int {
-        return NSNotFound
-    }
+        // 3. _cursorOfDividerAtIndex:position:dragLimits: 返回 nil
+        let sCursorPos = NSSelectorFromString("_cursorOfDividerAtIndex:position:dragLimits:")
+        if let m = class_getInstanceMethod(cls, sCursorPos) {
+            let origIMP = method_getImplementation(m)
+            typealias OrigFn = @convention(c) (AnyObject, Selector, Int, Double, AnyObject?) -> AnyObject?
+            let block: @convention(block) (AnyObject, Int, Double, AnyObject?) -> AnyObject? = { obj, index, pos, limits in
+                if let sv = obj as? NSSplitView, SplitViewDividerLocker.isLocked(sv) {
+                    return nil
+                }
+                let fn = unsafeBitCast(origIMP, to: OrigFn.self)
+                return fn(obj, sCursorPos, index, pos, limits)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
 
-    @objc func _visualIndexOfDividerForLocation(_ location: NSPoint, andReturnFrame frame: UnsafeMutablePointer<NSRect>?) -> Int {
-        return NSNotFound
+        // 4. _indexOfDividerForLocation:andReturnFrame: 返回 NSNotFound，禁用鼠标点击/拖动分界线
+        let sIndex = NSSelectorFromString("_indexOfDividerForLocation:andReturnFrame:")
+        if let m = class_getInstanceMethod(cls, sIndex) {
+            let origIMP = method_getImplementation(m)
+            typealias OrigFn = @convention(c) (AnyObject, Selector, NSPoint, UnsafeMutablePointer<NSRect>?) -> Int
+            let block: @convention(block) (AnyObject, NSPoint, UnsafeMutablePointer<NSRect>?) -> Int = { obj, point, frame in
+                if let sv = obj as? NSSplitView, SplitViewDividerLocker.isLocked(sv) {
+                    return NSNotFound
+                }
+                let fn = unsafeBitCast(origIMP, to: OrigFn.self)
+                return fn(obj, sIndex, point, frame)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
+
+        // 5. _visualIndexOfDividerForLocation:andReturnFrame: 返回 NSNotFound
+        let sVisual = NSSelectorFromString("_visualIndexOfDividerForLocation:andReturnFrame:")
+        if let m = class_getInstanceMethod(cls, sVisual) {
+            let origIMP = method_getImplementation(m)
+            typealias OrigFn = @convention(c) (AnyObject, Selector, NSPoint, UnsafeMutablePointer<NSRect>?) -> Int
+            let block: @convention(block) (AnyObject, NSPoint, UnsafeMutablePointer<NSRect>?) -> Int = { obj, point, frame in
+                if let sv = obj as? NSSplitView, SplitViewDividerLocker.isLocked(sv) {
+                    return NSNotFound
+                }
+                let fn = unsafeBitCast(origIMP, to: OrigFn.self)
+                return fn(obj, sVisual, point, frame)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
+
+        // 6. _effectiveFrameForDrawnFrame:ofDividerAtIndex: 返回 .zero
+        let sEffective = NSSelectorFromString("_effectiveFrameForDrawnFrame:ofDividerAtIndex:")
+        if let m = class_getInstanceMethod(cls, sEffective) {
+            let origIMP = method_getImplementation(m)
+            typealias OrigFn = @convention(c) (AnyObject, Selector, NSRect, Int) -> NSRect
+            let block: @convention(block) (AnyObject, NSRect, Int) -> NSRect = { obj, rect, index in
+                if let sv = obj as? NSSplitView, SplitViewDividerLocker.isLocked(sv) {
+                    return .zero
+                }
+                let fn = unsafeBitCast(origIMP, to: OrigFn.self)
+                return fn(obj, sEffective, rect, index)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
     }
 }
 

@@ -12,6 +12,7 @@ struct Sidebar: View {
     @Binding var selection: String?
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(LanguageManager.self) private var languageManager
     @State private var userProfile: UserProfile?
     @State private var showLogin = false
     @State private var userPlaylists: [APIPlaylist] = []  // 用户创建的歌单
@@ -143,7 +144,7 @@ struct Sidebar: View {
         if let profile = userProfile {
             // 已登录：显示头像 + 昵称 + 网易云标签 + 退出按钮
             HStack(spacing: 8) {
-                AsyncImage(url: URL(string: profile.avatarUrl ?? "")) { phase in
+                AsyncImage(url: URL(string: profile.displayAvatar ?? profile.avatarUrl?.httpsURL ?? "")) { phase in
                     switch phase {
                     case .success(let img):
                         img.resizable().aspectRatio(contentMode: .fill)

@@ -439,6 +439,10 @@ struct UserProfile: Codable {
     let userId: Int?
     let nickname: String?
     let avatarUrl: String?
+
+    var displayAvatar: String? {
+        avatarUrl?.httpsURL
+    }
 }
 
 // MARK: - DJ Radio (广播 / 电台 / 播客)
@@ -493,6 +497,10 @@ struct APIDJBanner: Codable, Identifiable, Hashable {
     let url: String?
     let typeTitle: String?
     var id: String { "\(targetId ?? 0)_\(pic ?? "")" }
+
+    var displayPic: String? {
+        pic?.httpsURL
+    }
 }
 
 struct APIDJCategory: Codable, Identifiable, Hashable {
@@ -518,15 +526,19 @@ struct APIDJProgram: Codable, Identifiable, Hashable {
     let radio: APIDJRadioBrief?
     let dj: APIDJHost?
 
+    var displayCover: String? {
+        (coverUrl ?? radio?.picUrl)?.httpsURL
+    }
+
     var asAPISong: APISong? {
         guard let song = mainSong else { return nil }
         let hostName = dj?.nickname ?? radio?.name ?? song.artists?.first?.name ?? "电台主播"
         let radioName = radio?.name ?? name
-        let pic = coverUrl ?? radio?.picUrl ?? song.album?.picUrl
+        let pic = (coverUrl ?? radio?.picUrl ?? song.album?.picUrl)?.httpsURL
         return APISong(
             id: song.id,
             name: name,
-            ar: [APIArtistBrief(id: 0, name: hostName, picUrl: dj?.avatarUrl)],
+            ar: [APIArtistBrief(id: 0, name: hostName, picUrl: dj?.avatarUrl?.httpsURL)],
             al: APIAlbumBrief(id: radio?.id ?? 0, name: radioName, picUrl: pic),
             dt: duration ?? song.duration ?? 0
         )

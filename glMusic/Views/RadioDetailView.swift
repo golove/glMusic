@@ -285,7 +285,7 @@ struct RadioProgramRow: View {
 
             // 节目封面与名称
             HStack(spacing: 12) {
-                AsyncImage(url: URL(string: program.coverUrl ?? "")) { phase in
+                AsyncImage(url: URL(string: program.displayCover ?? program.coverUrl?.httpsURL ?? "")) { phase in
                     if let img = phase.image {
                         img.resizable().aspectRatio(contentMode: .fill)
                     } else {

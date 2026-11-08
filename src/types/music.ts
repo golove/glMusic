@@ -59,6 +59,14 @@ export interface LyricLine {
 export type SoundQuality = 'standard' | 'exhigh' | 'lossless' | 'hires';
 export type RepeatMode = 'off' | 'all' | 'one';
 
+export interface AppTheme {
+  id: string;
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+  highlightColor: string;
+}
+
 export interface UserProfile {
   userId: number;
   nickname: string;

@@ -103,12 +103,12 @@ const perfModeLabels: Record<'full' | 'light' | 'dark', string> = {
 
 const currentRouteLabel = computed(() => {
   switch (player.currentRoute.value) {
-    case 'home': return '发现音乐';
+    case 'home': return '现在就听';
     case 'daily': return '每日推荐';
     case 'playlistSquare': return '歌单广场';
-    case 'browse': return '排行榜';
-    case 'radio': return '广播电台';
-    case 'search': return '音乐搜索';
+    case 'browse': return '浏览';
+    case 'radio': return '广播';
+    case 'search': return '搜索';
     case 'history': return '播放历史';
     case 'favorites': return '喜爱音乐';
     case 'playlist': return '歌单详情';

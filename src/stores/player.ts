@@ -1,6 +1,51 @@
 import { ref, computed } from 'vue';
-import type { Song, LyricLine, SoundQuality, RepeatMode, UserProfile } from '../types/music';
+import type { Song, LyricLine, SoundQuality, RepeatMode, UserProfile, AppTheme } from '../types/music';
 import { api } from '../services/api';
+
+export const APP_THEMES: AppTheme[] = [
+  {
+    id: 'sakura',
+    name: '樱花柔粉',
+    primaryColor: '#F43F5E',
+    secondaryColor: '#FB7185',
+    highlightColor: '#FFE0EA'
+  },
+  {
+    id: 'mint',
+    name: '薄荷清风',
+    primaryColor: '#10B981',
+    secondaryColor: '#06B6D4',
+    highlightColor: '#B3FFE6'
+  },
+  {
+    id: 'ocean',
+    name: '海风清蓝',
+    primaryColor: '#0EA5E9',
+    secondaryColor: '#3B82F6',
+    highlightColor: '#C2EFFF'
+  },
+  {
+    id: 'matcha',
+    name: '抹茶初夏',
+    primaryColor: '#16A34A',
+    secondaryColor: '#84CC16',
+    highlightColor: '#EBFA88'
+  },
+  {
+    id: 'peach',
+    name: '蜜桃日落',
+    primaryColor: '#F97316',
+    secondaryColor: '#FB923C',
+    highlightColor: '#FFEBC7'
+  },
+  {
+    id: 'lavender',
+    name: '薰衣草紫',
+    primaryColor: '#8B5CF6',
+    secondaryColor: '#A855F7',
+    highlightColor: '#EDDCFF'
+  }
+];
 
 class PlayerStore {
   // Audio instance
@@ -38,7 +83,13 @@ class PlayerStore {
   public isShowingLoginModal = ref(false);
   public isMaximized = ref(false);
   public currentUser = ref<UserProfile | null>(null);
-  public accentColor = ref('#0071e3'); // Apple Music blue/crimson theme
+  public currentThemeId = ref('sakura');
+  public currentTheme = computed(() => {
+    return APP_THEMES.find(t => t.id === this.currentThemeId.value) || APP_THEMES[0];
+  });
+  public accentColor = computed(() => this.currentTheme.value.primaryColor);
+  public secondaryColor = computed(() => this.currentTheme.value.secondaryColor);
+  public highlightColor = computed(() => this.currentTheme.value.highlightColor);
   public bokehPerformanceMode = ref<'full' | 'light' | 'dark'>('full');
 
   // Navigation History
@@ -110,9 +161,9 @@ class PlayerStore {
         this.soundQuality.value = savedQuality;
       }
 
-      const savedTheme = localStorage.getItem('theme_accent_color');
-      if (savedTheme) {
-        this.accentColor.value = savedTheme;
+      const savedThemeId = localStorage.getItem('app_theme_id');
+      if (savedThemeId && APP_THEMES.some(t => t.id === savedThemeId)) {
+        this.currentThemeId.value = savedThemeId;
       }
 
       const savedPerf = localStorage.getItem('bokeh_performance_mode') as 'full' | 'light' | 'dark';
@@ -252,9 +303,19 @@ class PlayerStore {
     }
   }
 
-  public setAccentColor(color: string) {
-    this.accentColor.value = color;
-    localStorage.setItem('theme_accent_color', color);
+  public setTheme(themeId: string) {
+    const found = APP_THEMES.find(t => t.id === themeId);
+    if (found) {
+      this.currentThemeId.value = themeId;
+      localStorage.setItem('app_theme_id', themeId);
+    }
+  }
+
+  public setAccentColor(colorOrThemeId: string) {
+    const matched = APP_THEMES.find(t => t.id === colorOrThemeId || t.primaryColor.toLowerCase() === colorOrThemeId.toLowerCase());
+    if (matched) {
+      this.setTheme(matched.id);
+    }
   }
 
   public next() {

@@ -128,11 +128,11 @@ onUnmounted(() => {
 }
 
 .color-1 {
-  background: color-mix(in srgb, var(--accent) 70%, #ff2d55);
+  background: var(--accent-secondary, color-mix(in srgb, var(--accent) 70%, #ff2d55));
 }
 
 .color-2 {
-  background: color-mix(in srgb, var(--accent) 40%, #ffffff);
+  background: var(--accent-highlight, color-mix(in srgb, var(--accent) 40%, #ffffff));
 }
 
 /* Optical styles */

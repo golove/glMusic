@@ -1,5 +1,13 @@
 <template>
-  <div class="app-root" :class="{ 'is-maximized': player.isMaximized.value }" :style="{ '--accent': player.accentColor.value }">
+  <div
+    class="app-root"
+    :class="{ 'is-maximized': player.isMaximized.value }"
+    :style="{
+      '--accent': player.accentColor.value,
+      '--accent-secondary': player.secondaryColor.value,
+      '--accent-highlight': player.highlightColor.value
+    }"
+  >
     <!-- Ambient Bokeh Background -->
     <NightBokehBackground />
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="app-root" :style="{ '--accent': player.accentColor.value }">
+  <div class="app-root" :class="{ 'is-maximized': player.isMaximized.value }" :style="{ '--accent': player.accentColor.value }">
     <!-- Ambient Bokeh Background -->
     <NightBokehBackground />
 
@@ -40,6 +40,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue';
 import { player } from './stores/player';
+import { api } from './services/api';
 
 // Components
 import NightBokehBackground from './components/NightBokehBackground.vue';
@@ -119,12 +120,43 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
+let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function handleWindowResize() {
+  if (!document.body.classList.contains('is-resizing')) {
+    document.body.classList.add('is-resizing');
+  }
+
+  if (resizeDebounceTimer) {
+    clearTimeout(resizeDebounceTimer);
+  }
+
+  resizeDebounceTimer = setTimeout(async () => {
+    document.body.classList.remove('is-resizing');
+    try {
+      player.isMaximized.value = await api.isWindowMaximized();
+    } catch {
+      // ignore
+    }
+  }, 100);
+}
+
+onMounted(async () => {
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('resize', handleWindowResize, { passive: true });
+  try {
+    player.isMaximized.value = await api.isWindowMaximized();
+  } catch {
+    // ignore
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('resize', handleWindowResize);
+  if (resizeDebounceTimer) {
+    clearTimeout(resizeDebounceTimer);
+  }
 });
 </script>
 
@@ -160,7 +192,12 @@ html, body {
   position: relative;
   display: flex;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: 8px;
+  background-color: #121316;
+}
+
+.app-root.is-maximized {
+  border-radius: 0;
 }
 
 .window-shell {
@@ -194,6 +231,31 @@ html, body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  contain: content;
+}
+
+/* Window Drag-Resize Performance Optimization (Turbo Mode) */
+body.is-resizing * {
+  transition: none !important;
+  animation-play-state: paused !important;
+}
+
+body.is-resizing .night-bokeh-container .bokeh-spot {
+  transition: none !important;
+  will-change: auto !important;
+}
+
+body.is-resizing .sidebar-container,
+body.is-resizing .custom-titlebar,
+body.is-resizing .player-bar-capsule,
+body.is-resizing .nav-item,
+body.is-resizing .banner-badge {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.is-resizing .floating-player-bar {
+  pointer-events: none !important;
 }
 
 /* Custom ultra-thin Apple-style frosted scrollbars for Windows */

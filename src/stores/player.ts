@@ -36,6 +36,7 @@ class PlayerStore {
   public isShowingLyrics = ref(false);
   public isShowingQueue = ref(false);
   public isShowingLoginModal = ref(false);
+  public isMaximized = ref(false);
   public currentUser = ref<UserProfile | null>(null);
   public accentColor = ref('#0071e3'); // Apple Music blue/crimson theme
   public bokehPerformanceMode = ref<'full' | 'light' | 'dark'>('full');

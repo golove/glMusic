@@ -217,9 +217,9 @@ function formatTime(seconds: number): string {
 <style scoped>
 .player-bar-capsule {
   height: 64px;
-  background: rgba(30, 32, 38, 0.78);
-  backdrop-filter: blur(35px) saturate(210%);
-  -webkit-backdrop-filter: blur(35px) saturate(210%);
+  background: rgba(30, 32, 38, 0.84);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 32px;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
@@ -230,6 +230,7 @@ function formatTime(seconds: number): string {
   user-select: none;
   position: relative;
   z-index: 100;
+  contain: layout style;
 }
 
 /* Left Section */

@@ -104,7 +104,8 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: 0;
   background-color: #121316;
-  contain: layout paint;
+  contain: strict;
+  transform: translateZ(0);
 }
 
 .base-ambient {

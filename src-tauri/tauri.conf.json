@@ -20,7 +20,9 @@
         "center": true,
         "decorations": false,
         "shadow": true,
-        "transparent": true
+        "transparent": false,
+        "backgroundColor": "#121316",
+        "dragDropEnabled": false
       }
     ],
     "security": {

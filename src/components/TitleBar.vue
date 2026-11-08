@@ -66,8 +66,8 @@
       </button>
 
       <!-- Maximize / Restore Button -->
-      <button class="win-btn maximize-btn" @click="toggleMaximize" :title="isMaximized ? '还原' : '最大化'">
-        <Copy v-if="isMaximized" :size="12" />
+      <button class="win-btn maximize-btn" @click="toggleMaximize" :title="player.isMaximized.value ? '还原' : '最大化'">
+        <Copy v-if="player.isMaximized.value" :size="12" />
         <Square v-else :size="12" />
       </button>
 
@@ -93,7 +93,6 @@ import {
 import { player } from '../stores/player';
 import { api } from '../services/api';
 
-const isMaximized = ref(false);
 const showPerfMenu = ref(false);
 
 const perfModeLabels: Record<'full' | 'light' | 'dark', string> = {
@@ -129,7 +128,7 @@ async function minimize() {
 
 async function toggleMaximize() {
   const max = await api.toggleMaximizeWindow();
-  isMaximized.value = max;
+  player.isMaximized.value = max;
 }
 
 function handleDoubleClick() {
@@ -142,7 +141,7 @@ async function close() {
 
 onMounted(async () => {
   try {
-    isMaximized.value = await api.isWindowMaximized();
+    player.isMaximized.value = await api.isWindowMaximized();
   } catch (e) {
     console.warn('Could not query window maximize state', e);
   }
@@ -158,12 +157,13 @@ onMounted(async () => {
   justify-content: space-between;
   padding: 0 4px 0 16px;
   user-select: none;
-  background: rgba(18, 19, 22, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(18, 19, 22, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   position: relative;
   z-index: 150;
+  contain: layout style;
 }
 
 /* Left: Navigation Buttons */

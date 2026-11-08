@@ -152,12 +152,13 @@ function handleUserClick() {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(22, 24, 29, 0.65);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  background: rgba(20, 22, 27, 0.90);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   user-select: none;
   z-index: 10;
+  contain: layout style;
 }
 
 .sidebar-header {

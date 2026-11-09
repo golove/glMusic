@@ -41,6 +41,7 @@ impl NcmService {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn get_cookie(&self) -> Option<String> {
         self.cookie.read().await.clone()
     }
@@ -300,6 +301,7 @@ impl NcmService {
         Ok(resp.body)
     }
 
+    #[allow(dead_code)]
     pub async fn dj_recommend_type(&self, cate_id: i64) -> Result<Value, String> {
         let client = self.client.read().await;
         let query = Query::new().param("cateId", &cate_id.to_string());
@@ -314,6 +316,7 @@ impl NcmService {
         Ok(resp.body)
     }
 
+    #[allow(dead_code)]
     pub async fn dj_program(&self, rid: i64, limit: i64, offset: i64) -> Result<Value, String> {
         let client = self.client.read().await;
         let query = Query::new()

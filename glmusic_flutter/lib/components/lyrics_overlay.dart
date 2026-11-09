@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/player_provider.dart';
@@ -15,18 +17,21 @@ class LyricsOverlay extends StatefulWidget {
 class _LyricsOverlayState extends State<LyricsOverlay> {
   final ScrollController _scrollController = ScrollController();
   int _lastIndex = -1;
+  bool _isUserScrolling = false;
+  Timer? _resumeScrollTimer;
 
   @override
   void dispose() {
+    _resumeScrollTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _scrollToActiveLine(int index, int total) {
-    if (index == _lastIndex || !_scrollController.hasClients || index < 0) return;
+    if (_isUserScrolling || index == _lastIndex || !_scrollController.hasClients || index < 0) return;
     _lastIndex = index;
 
-    // Approximate line height 70px, offset to center
+    // Approximate line height 72px, offset to center
     const itemHeight = 72.0;
     final targetOffset = (index * itemHeight) - 200.0;
     final clamped = targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent);
@@ -72,21 +77,52 @@ class _LyricsOverlayState extends State<LyricsOverlay> {
               ),
             ),
 
-            // 2. Close button in top-right
+            // 2. Action buttons in top-right (Translation toggle + Close)
             Positioned(
               top: 54,
               right: 28,
-              child: IconButton(
-                icon: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
+              child: Row(
+                children: [
+                  // Translation toggle
+                  InkWell(
+                    onTap: () => player.toggleTranslation(),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: player.showTranslation
+                            ? theme.primaryColor.withValues(alpha: 0.25)
+                            : Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: player.showTranslation
+                            ? Border.all(color: theme.primaryColor, width: 1)
+                            : null,
+                      ),
+                      child: Text(
+                        '译',
+                        style: TextStyle(
+                          color: player.showTranslation ? theme.primaryColor : Colors.white60,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   ),
-                  child: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
-                ),
-                onPressed: () => player.toggleLyrics(false),
-                tooltip: '关闭歌词',
+                  const SizedBox(width: 12),
+                  // Close button
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
+                    ),
+                    onPressed: () => player.toggleLyrics(false),
+                    tooltip: '关闭歌词 (Esc)',
+                  ),
+                ],
               ),
             ),
 
@@ -135,27 +171,48 @@ class _LyricsOverlayState extends State<LyricsOverlay> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 8),
-                          // Artist Name
-                          Text(
-                            song.artistText,
-                            style: TextStyle(
-                              color: theme.primaryColor,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
+                          // Artist Name (Clickable)
+                          MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: GestureDetector(
+                              onTap: () {
+                                if (song.artists.isNotEmpty) {
+                                  final a = song.artists[0];
+                                  player.toggleLyrics(false);
+                                  player.navigateTo('artistDetail', id: a.id, meta: a);
+                                }
+                              },
+                              child: Text(
+                                song.artistText,
+                                style: TextStyle(
+                                  color: theme.primaryColor,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 4),
-                          // Album Name
-                          Text(
-                            song.album.name,
-                            style: const TextStyle(
-                              color: Colors.white38,
-                              fontSize: 13,
+                          const SizedBox(height: 6),
+                          // Album Name (Clickable)
+                          MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: GestureDetector(
+                              onTap: () {
+                                player.toggleLyrics(false);
+                                player.navigateTo('albumDetail', id: song.album.id, meta: song.album);
+                              },
+                              child: Text(
+                                song.album.name,
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
@@ -172,58 +229,80 @@ class _LyricsOverlayState extends State<LyricsOverlay> {
                                 style: TextStyle(color: Colors.white38, fontSize: 16),
                               ),
                             )
-                          : ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.symmetric(vertical: 200),
-                              itemCount: player.lyrics.length,
-                              itemBuilder: (ctx, index) {
-                                final line = player.lyrics[index];
-                                final isCurrent = index == player.currentLyricIndex;
+                          : NotificationListener<ScrollNotification>(
+                              onNotification: (notification) {
+                                if (notification is UserScrollNotification) {
+                                  if (notification.direction != ScrollDirection.idle) {
+                                    _isUserScrolling = true;
+                                    _resumeScrollTimer?.cancel();
+                                    _resumeScrollTimer = Timer(const Duration(seconds: 4), () {
+                                      if (mounted) {
+                                        setState(() {
+                                          _isUserScrolling = false;
+                                        });
+                                      }
+                                    });
+                                  }
+                                }
+                                return false;
+                              },
+                              child: ListView.builder(
+                                controller: _scrollController,
+                                padding: const EdgeInsets.symmetric(vertical: 200),
+                                itemCount: player.lyrics.length,
+                                itemBuilder: (ctx, index) {
+                                  final line = player.lyrics[index];
+                                  final isCurrent = index == player.currentLyricIndex;
 
-                                return InkWell(
-                                  onTap: () {
-                                    player.seek(Duration(milliseconds: (line.time * 1000).toInt()));
-                                  },
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          line.text,
-                                          style: TextStyle(
-                                            color: isCurrent ? Colors.white : Colors.white.withValues(alpha: 0.35),
-                                            fontSize: isCurrent ? 24 : 17,
-                                            fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
-                                            shadows: isCurrent
-                                                ? [
-                                                    BoxShadow(
-                                                      color: theme.primaryColor.withValues(alpha: 0.6),
-                                                      blurRadius: 18,
-                                                    ),
-                                                  ]
-                                                : null,
-                                          ),
-                                        ),
-                                        if (line.translation != null && line.translation!.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
+                                  return InkWell(
+                                    onTap: () {
+                                      _isUserScrolling = false;
+                                      _resumeScrollTimer?.cancel();
+                                      player.seek(Duration(milliseconds: (line.time * 1000).toInt()));
+                                      _lastIndex = -1;
+                                      _scrollToActiveLine(index, player.lyrics.length);
+                                    },
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
                                           Text(
-                                            line.translation!,
+                                            line.text,
                                             style: TextStyle(
-                                              color: isCurrent
-                                                  ? Colors.white.withValues(alpha: 0.85)
-                                                  : Colors.white.withValues(alpha: 0.25),
-                                              fontSize: isCurrent ? 15 : 13,
-                                              fontWeight: isCurrent ? FontWeight.w500 : FontWeight.normal,
+                                              color: isCurrent ? Colors.white : Colors.white.withValues(alpha: 0.35),
+                                              fontSize: isCurrent ? 24 : 17,
+                                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                                              shadows: isCurrent
+                                                  ? [
+                                                      BoxShadow(
+                                                        color: theme.primaryColor.withValues(alpha: 0.6),
+                                                        blurRadius: 18,
+                                                      ),
+                                                    ]
+                                                  : null,
                                             ),
                                           ),
+                                          if (player.showTranslation && line.translation != null && line.translation!.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              line.translation!,
+                                              style: TextStyle(
+                                                color: isCurrent
+                                                    ? Colors.white.withValues(alpha: 0.85)
+                                                    : Colors.white.withValues(alpha: 0.25),
+                                                fontSize: isCurrent ? 15 : 13,
+                                                fontWeight: isCurrent ? FontWeight.w500 : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
                                         ],
-                                      ],
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
+                                  );
+                                },
+                              ),
                             ),
                     ),
                   ],

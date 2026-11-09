@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../components/hover_play_card.dart';
 import '../models/music.dart';
 import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
@@ -83,6 +84,8 @@ class _HomeViewState extends State<HomeView> {
 
   Widget _buildBanners() {
     final theme = context.watch<ThemeProvider>();
+    final player = context.read<PlayerProvider>();
+
     return SizedBox(
       height: 180,
       child: ListView.separated(
@@ -91,32 +94,53 @@ class _HomeViewState extends State<HomeView> {
         separatorBuilder: (_, _) => const SizedBox(width: 16),
         itemBuilder: (ctx, index) {
           final banner = _banners[index];
-          return ClipRRect(
+          return InkWell(
+            onTap: () async {
+              if (banner.targetId == null || banner.targetId == 0) return;
+              if (banner.targetType == 1) {
+                // Song
+                try {
+                  final songs = await _core.getSongDetail([banner.targetId!]);
+                  if (songs.isNotEmpty) {
+                    player.playSong(songs[0]);
+                  }
+                } catch (_) {}
+              } else if (banner.targetType == 10) {
+                // Album
+                player.navigateTo('albumDetail', id: banner.targetId!);
+              } else if (banner.targetType == 1000) {
+                // Playlist
+                player.navigateTo('playlistDetail', id: banner.targetId!);
+              }
+            },
             borderRadius: BorderRadius.circular(12),
-            child: Stack(
-              children: [
-                CachedNetworkImage(
-                  imageUrl: banner.imageUrl,
-                  height: 180,
-                  width: 440,
-                  fit: BoxFit.cover,
-                ),
-                Positioned(
-                  right: 10,
-                  bottom: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: theme.primaryColor,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      banner.typeTitle,
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: banner.imageUrl,
+                    height: 180,
+                    width: 440,
+                    fit: BoxFit.cover,
+                  ),
+                  Positioned(
+                    right: 10,
+                    bottom: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: theme.primaryColor,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        banner.typeTitle,
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -160,7 +184,6 @@ class _HomeViewState extends State<HomeView> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Calculate crossAxisCount based on container width
         final crossAxisCount = (constraints.maxWidth / 160).floor().clamp(4, 7);
 
         return GridView.builder(
@@ -175,68 +198,21 @@ class _HomeViewState extends State<HomeView> {
           itemCount: _playlists.length,
           itemBuilder: (ctx, index) {
             final playlist = _playlists[index];
-            return InkWell(
+            return HoverPlayCard(
+              title: playlist.name,
+              imageUrl: playlist.coverImgUrl,
+              playCount: playlist.playCount,
               onTap: () {
                 player.navigateTo('playlistDetail', id: playlist.id, meta: playlist);
               },
-              borderRadius: BorderRadius.circular(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Cover
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CachedNetworkImage(
-                            imageUrl: playlist.coverImgUrl,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, _, _) => Container(color: Colors.white12),
-                          ),
-                          if (playlist.playCount != null)
-                            Positioned(
-                              top: 6,
-                              right: 6,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.6),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 12),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      _formatPlayCount(playlist.playCount!),
-                                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Title
-                  Text(
-                    playlist.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      height: 1.25,
-                    ),
-                  ),
-                ],
-              ),
+              onPlay: () async {
+                try {
+                  final (_, songs) = await _core.getPlaylistDetail(playlist.id);
+                  if (songs.isNotEmpty) {
+                    player.playSong(songs[0], newQueue: songs, index: 0);
+                  }
+                } catch (_) {}
+              },
             );
           },
         );
@@ -335,15 +311,5 @@ class _HomeViewState extends State<HomeView> {
         );
       },
     );
-  }
-
-  String _formatPlayCount(int count) {
-    if (count > 100000000) {
-      return '${(count / 100000000).toStringAsFixed(1)}亿';
-    }
-    if (count > 10000) {
-      return '${(count / 10000).toStringAsFixed(0)}万';
-    }
-    return count.toString();
   }
 }

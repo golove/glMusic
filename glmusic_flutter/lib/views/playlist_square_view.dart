@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/music.dart';
 import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/rust_core_service.dart';
+import '../components/hover_play_card.dart';
 
 class PlaylistSquareView extends StatefulWidget {
   const PlaylistSquareView({super.key});
@@ -131,66 +131,21 @@ class _PlaylistSquareViewState extends State<PlaylistSquareView> {
                       itemCount: _playlists.length,
                       itemBuilder: (ctx, index) {
                         final pl = _playlists[index];
-                        return InkWell(
+                        return HoverPlayCard(
+                          title: pl.name,
+                          imageUrl: pl.coverImgUrl,
+                          playCount: pl.playCount,
                           onTap: () {
                             player.navigateTo('playlistDetail', id: pl.id, meta: pl);
                           },
-                          borderRadius: BorderRadius.circular(10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      CachedNetworkImage(
-                                        imageUrl: pl.coverImgUrl,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (_, _, _) => Container(color: Colors.white12),
-                                      ),
-                                      if (pl.playCount != null)
-                                        Positioned(
-                                          top: 6,
-                                          right: 6,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(alpha: 0.6),
-                                              borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 12),
-                                                const SizedBox(width: 2),
-                                                Text(
-                                                  _formatPlayCount(pl.playCount!),
-                                                  style: const TextStyle(color: Colors.white, fontSize: 10),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                pl.name,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.25,
-                                ),
-                              ),
-                            ],
-                          ),
+                          onPlay: () async {
+                            try {
+                              final (_, songs) = await _core.getPlaylistDetail(pl.id);
+                              if (songs.isNotEmpty) {
+                                player.playSong(songs[0], newQueue: songs, index: 0);
+                              }
+                            } catch (_) {}
+                          },
                         );
                       },
                     );
@@ -199,15 +154,5 @@ class _PlaylistSquareViewState extends State<PlaylistSquareView> {
         ),
       ],
     );
-  }
-
-  String _formatPlayCount(int count) {
-    if (count > 100000000) {
-      return '${(count / 100000000).toStringAsFixed(1)}亿';
-    }
-    if (count > 10000) {
-      return '${(count / 10000).toStringAsFixed(0)}万';
-    }
-    return count.toString();
   }
 }

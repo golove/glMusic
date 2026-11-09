@@ -365,6 +365,59 @@ class RustCoreService {
     }
   }
 
+  // Artist Detail + Hot Songs
+  Future<Map<String, dynamic>> getArtistDetail(int id) async {
+    try {
+      final json = await _get('/artist/detail', {'id': id});
+      return json as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('getArtistDetail error: $e');
+      return {};
+    }
+  }
+
+  // Artist Albums
+  Future<List<Album>> getArtistAlbums(int id, {int limit = 30}) async {
+    try {
+      final json = await _get('/artist/album', {'id': id, 'limit': limit});
+      final list = (json['hotAlbums'] ?? []) as List<dynamic>;
+      return list.map((a) => Album.fromJson(a as Map<String, dynamic>)).toList();
+    } catch (e) {
+      debugPrint('getArtistAlbums error: $e');
+      return [];
+    }
+  }
+
+  // DJ Radio
+  Future<List<BannerItem>> getDjBanners() async {
+    try {
+      final json = await _get('/dj/banner');
+      final list = (json['data'] ?? []) as List<dynamic>;
+      return list.map((b) => BannerItem.fromJson(b as Map<String, dynamic>)).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<Playlist>> getDjRecommend() async {
+    try {
+      final json = await _get('/dj/recommend');
+      final list = (json['djRadios'] ?? []) as List<dynamic>;
+      return list.map((d) {
+        return Playlist(
+          id: (d['id'] as num?)?.toInt() ?? 0,
+          name: d['name'] as String? ?? '电台',
+          coverImgUrl: (d['picUrl'] ?? '') as String,
+          description: d['rcmdtext'] as String?,
+          playCount: (d['playCount'] as num?)?.toInt(),
+          trackCount: (d['programCount'] as num?)?.toInt(),
+        );
+      }).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
   // QR Code Login
   Future<String> getQrKey() async {
     final json = await _get('/login/qr/key');

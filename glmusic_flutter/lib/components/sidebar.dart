@@ -135,6 +135,12 @@ class _SidebarState extends State<Sidebar> {
                   onTap: () => player.navigateTo('browse'),
                 ),
                 _NavItem(
+                  title: '广播',
+                  icon: Icons.radio_rounded,
+                  isSelected: currentRoute == 'radio',
+                  onTap: () => player.navigateTo('radio'),
+                ),
+                _NavItem(
                   title: '搜索',
                   icon: Icons.search_rounded,
                   isSelected: currentRoute == 'search',

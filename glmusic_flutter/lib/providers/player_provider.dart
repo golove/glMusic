@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/music.dart';
 import '../services/audio_service.dart';
 import '../services/rust_core_service.dart';
@@ -23,6 +24,7 @@ class PlayerProvider extends ChangeNotifier {
   Duration _currentPosition = Duration.zero;
   Duration _totalDuration = Duration.zero;
   double _volume = 0.8;
+  double _lastVolume = 0.8;
   SoundQuality _soundQuality = SoundQuality.exhigh;
   PlayRepeatMode _repeatMode = PlayRepeatMode.all;
   bool _isShuffled = false;
@@ -33,12 +35,21 @@ class PlayerProvider extends ChangeNotifier {
 
   List<LyricLine> _lyrics = [];
   int _currentLyricIndex = -1;
+  bool _showTranslation = true;
 
   bool _isShowingLyrics = false;
   bool _isShowingQueue = false;
 
   final Set<int> _likedSongIds = {};
   List<Song> _history = [];
+  List<Song> _favorites = [];
+
+  String? _playbackErrorMessage;
+  Timer? _autoSkipTimer;
+
+  // Preloading cache for next song URL
+  final Map<int, String> _preloadedUrls = {};
+  int? _preloadingSongId;
 
   // Navigation
   final List<NavDestination> _navStack = [const NavDestination('home')];
@@ -56,6 +67,7 @@ class PlayerProvider extends ChangeNotifier {
   Duration get currentPosition => _currentPosition;
   Duration get totalDuration => _totalDuration;
   double get volume => _volume;
+  bool get isMuted => _volume == 0;
   SoundQuality get soundQuality => _soundQuality;
   PlayRepeatMode get repeatMode => _repeatMode;
   bool get isShuffled => _isShuffled;
@@ -63,10 +75,13 @@ class PlayerProvider extends ChangeNotifier {
   int get currentIndex => _currentIndex;
   List<LyricLine> get lyrics => _lyrics;
   int get currentLyricIndex => _currentLyricIndex;
+  bool get showTranslation => _showTranslation;
   bool get isShowingLyrics => _isShowingLyrics;
   bool get isShowingQueue => _isShowingQueue;
   Set<int> get likedSongIds => _likedSongIds;
   List<Song> get history => _history;
+  List<Song> get favorites => _favorites;
+  String? get playbackErrorMessage => _playbackErrorMessage;
 
   NavDestination get currentNav => _navStack[_navIndex];
   bool get canGoBack => _navIndex > 0;
@@ -81,6 +96,7 @@ class PlayerProvider extends ChangeNotifier {
     _posSub = _audio.onPositionChanged.listen((pos) {
       _currentPosition = pos;
       _updateLyricIndex(pos.inMilliseconds / 1000.0);
+      _checkPreloadNextSong(pos);
       notifyListeners();
     });
 
@@ -104,13 +120,56 @@ class PlayerProvider extends ChangeNotifier {
 
   Future<void> _loadInitialData() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      _volume = prefs.getDouble('glmusic_volume') ?? 0.8;
+      _lastVolume = _volume > 0 ? _volume : 0.8;
+      _audio.setVolume(_volume);
+
+      final qualityCode = prefs.getString('glmusic_sound_quality');
+      if (qualityCode != null) {
+        _soundQuality = SoundQuality.values.firstWhere(
+          (q) => q.code == qualityCode,
+          orElse: () => SoundQuality.exhigh,
+        );
+      }
+
+      final repeatName = prefs.getString('glmusic_repeat_mode');
+      if (repeatName != null) {
+        _repeatMode = PlayRepeatMode.values.firstWhere(
+          (r) => r.name == repeatName,
+          orElse: () => PlayRepeatMode.all,
+        );
+      }
+
+      _isShuffled = prefs.getBool('glmusic_is_shuffled') ?? false;
+      _showTranslation = prefs.getBool('glmusic_show_translation') ?? true;
+
       _history = await _core.getHistory();
-      final favs = await _core.getFavorites();
-      for (final s in favs) {
+      _favorites = await _core.getFavorites();
+      for (final s in _favorites) {
         _likedSongIds.add(s.id);
       }
       notifyListeners();
     } catch (_) {}
+  }
+
+  void _checkPreloadNextSong(Duration currentPos) {
+    if (_queue.isEmpty || _totalDuration.inSeconds < 25) return;
+    if (currentPos.inSeconds < _totalDuration.inSeconds - 12) return;
+
+    final nextIndex = (_currentIndex + 1) % _queue.length;
+    final nextSong = _queue[nextIndex];
+    if (_preloadedUrls.containsKey(nextSong.id) || _preloadingSongId == nextSong.id) return;
+
+    _preloadingSongId = nextSong.id;
+    _core.getSongUrl(nextSong.id, level: _soundQuality.code).then((url) {
+      if (url != null && url.isNotEmpty) {
+        _preloadedUrls[nextSong.id] = url;
+      }
+      _preloadingSongId = null;
+    }).catchError((_) {
+      _preloadingSongId = null;
+    });
   }
 
   void _updateLyricIndex(double currentTimeSec) {
@@ -177,21 +236,46 @@ class PlayerProvider extends ChangeNotifier {
     try {
       String? url = song.url;
       if (url == null || url.isEmpty) {
+        url = _preloadedUrls.remove(song.id);
+      }
+      if (url == null || url.isEmpty) {
         url = await _core.getSongUrl(song.id, level: _soundQuality.code);
       }
 
       if (url != null && url.isNotEmpty) {
+        _playbackErrorMessage = null;
         await _audio.playUrl(url);
         _isPlaying = true;
       } else {
         debugPrint('[Player] Failed to get playable URL for ${song.name}');
+        _handlePlayFailed(song);
       }
     } catch (e) {
       debugPrint('[Player] Play error: $e');
+      _handlePlayFailed(song);
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  void _handlePlayFailed(Song song) {
+    _playbackErrorMessage = '《${song.name}》暂无可用音源或因版权受限无法播放';
+    notifyListeners();
+
+    _autoSkipTimer?.cancel();
+    if (_queue.length > 1) {
+      _autoSkipTimer = Timer(const Duration(milliseconds: 1600), () {
+        _playbackErrorMessage = null;
+        next();
+      });
+    }
+  }
+
+  void clearPlaybackError() {
+    _playbackErrorMessage = null;
+    _autoSkipTimer?.cancel();
+    notifyListeners();
   }
 
   Future<void> togglePlayPause() async {
@@ -252,7 +336,107 @@ class PlayerProvider extends ChangeNotifier {
 
   Future<void> setVolume(double vol) async {
     _volume = vol.clamp(0.0, 1.0);
+    if (_volume > 0) {
+      _lastVolume = _volume;
+    }
     await _audio.setVolume(_volume);
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('glmusic_volume', _volume);
+    } catch (_) {}
+  }
+
+  void toggleMute() {
+    if (_volume > 0) {
+      _lastVolume = _volume;
+      setVolume(0.0);
+    } else {
+      setVolume(_lastVolume > 0 ? _lastVolume : 0.8);
+    }
+  }
+
+  void toggleTranslation() {
+    _showTranslation = !_showTranslation;
+    notifyListeners();
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setBool('glmusic_show_translation', _showTranslation);
+    }).catchError((_) {});
+  }
+
+  void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _queue.length || newIndex < 0 || newIndex > _queue.length) return;
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final song = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, song);
+
+    // Keep original queue synced
+    final origIdx = _originalQueue.indexWhere((s) => s.id == song.id);
+    if (origIdx >= 0) {
+      final origSong = _originalQueue.removeAt(origIdx);
+      final newOrigIdx = newIndex.clamp(0, _originalQueue.length);
+      _originalQueue.insert(newOrigIdx, origSong);
+    }
+
+    if (_currentSong != null) {
+      _currentIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
+    }
+    notifyListeners();
+  }
+
+  void playNext(Song song) {
+    if (_queue.isEmpty || _currentIndex < 0) {
+      playSong(song);
+      return;
+    }
+    _queue.removeWhere((s) => s.id == song.id);
+    _originalQueue.removeWhere((s) => s.id == song.id);
+    _queue.insert(_currentIndex + 1, song);
+    _originalQueue.insert(_currentIndex + 1, song);
+    notifyListeners();
+  }
+
+  void addToQueue(Song song) {
+    if (!_queue.any((s) => s.id == song.id)) {
+      _queue.add(song);
+      _originalQueue.add(song);
+      notifyListeners();
+    }
+  }
+
+  void removeFromQueue(int index) {
+    if (index < 0 || index >= _queue.length) return;
+    final removed = _queue.removeAt(index);
+    _originalQueue.removeWhere((s) => s.id == removed.id);
+    if (index < _currentIndex) {
+      _currentIndex--;
+    } else if (index == _currentIndex) {
+      if (_queue.isNotEmpty) {
+        final newIndex = index < _queue.length ? index : 0;
+        _currentIndex = newIndex;
+        playSong(_queue[_currentIndex]);
+      } else {
+        _currentSong = null;
+        _currentIndex = -1;
+        _audio.stop();
+        _isPlaying = false;
+      }
+    }
+    notifyListeners();
+  }
+
+  void clearQueue() {
+    if (_currentSong != null) {
+      _queue = [_currentSong!];
+      _originalQueue = [_currentSong!];
+      _currentIndex = 0;
+    } else {
+      _queue.clear();
+      _originalQueue.clear();
+      _currentIndex = -1;
+    }
     notifyListeners();
   }
 
@@ -260,6 +444,10 @@ class PlayerProvider extends ChangeNotifier {
     if (_soundQuality == quality) return;
     _soundQuality = quality;
     notifyListeners();
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('glmusic_sound_quality', quality.code);
+    }).catchError((_) {});
+
     if (_currentSong != null && _isPlaying) {
       final pos = _currentPosition;
       playSong(_currentSong!).then((_) => seek(pos));
@@ -279,6 +467,9 @@ class PlayerProvider extends ChangeNotifier {
         break;
     }
     notifyListeners();
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('glmusic_repeat_mode', _repeatMode.name);
+    }).catchError((_) {});
   }
 
   void toggleShuffle() {
@@ -299,27 +490,26 @@ class PlayerProvider extends ChangeNotifier {
       }
     }
     notifyListeners();
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setBool('glmusic_is_shuffled', _isShuffled);
+    }).catchError((_) {});
   }
 
   Future<void> toggleLike(Song song) async {
     final isLiked = _likedSongIds.contains(song.id);
     if (isLiked) {
       _likedSongIds.remove(song.id);
+      _favorites.removeWhere((s) => s.id == song.id);
     } else {
       _likedSongIds.add(song.id);
+      _favorites.removeWhere((s) => s.id == song.id);
+      _favorites.insert(0, song);
     }
     notifyListeners();
 
     try {
       await _core.likeSong(song.id, like: !isLiked);
-      // Persist to local favorites
-      final favs = await _core.getFavorites();
-      if (isLiked) {
-        favs.removeWhere((s) => s.id == song.id);
-      } else {
-        favs.insert(0, song);
-      }
-      await _core.saveFavorites(favs);
+      await _core.saveFavorites(_favorites);
     } catch (_) {}
   }
 

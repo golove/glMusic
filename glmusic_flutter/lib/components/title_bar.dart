@@ -112,6 +112,8 @@ class TitleBar extends StatelessWidget {
         return '歌单广场';
       case 'browse':
         return '浏览';
+      case 'radio':
+        return '广播';
       case 'search':
         return '搜索';
       case 'history':
@@ -122,6 +124,8 @@ class TitleBar extends StatelessWidget {
         return '歌单详情';
       case 'albumDetail':
         return '专辑详情';
+      case 'artistDetail':
+        return '艺人详情';
       default:
         return 'glMusic';
     }

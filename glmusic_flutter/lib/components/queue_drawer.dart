@@ -64,6 +64,18 @@ class QueueDrawer extends StatelessWidget {
                           style: const TextStyle(color: Colors.white38, fontSize: 12),
                         ),
                         const Spacer(),
+                        if (player.queue.isNotEmpty)
+                          TextButton(
+                            onPressed: () => player.clearQueue(),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white54,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: const Text('清空', style: TextStyle(fontSize: 11)),
+                          ),
+                        const SizedBox(width: 4),
                         IconButton(
                           icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white54),
                           onPressed: () => player.toggleQueue(false),
@@ -76,7 +88,7 @@ class QueueDrawer extends StatelessWidget {
 
                   Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
 
-                  // Queue List
+                  // Queue List with Reorderable Drag & Drop
                   Expanded(
                     child: player.queue.isEmpty
                         ? const Center(
@@ -85,72 +97,105 @@ class QueueDrawer extends StatelessWidget {
                               style: TextStyle(color: Colors.white38, fontSize: 13),
                             ),
                           )
-                        : ListView.separated(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                        : ReorderableListView.builder(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            buildDefaultDragHandles: false,
                             itemCount: player.queue.length,
-                            separatorBuilder: (_, _) => Divider(
-                              color: Colors.white.withValues(alpha: 0.03),
-                              height: 1,
-                            ),
+                            // ignore: deprecated_member_use
+                            onReorder: (oldIndex, newIndex) {
+                              player.reorderQueue(oldIndex, newIndex);
+                            },
                             itemBuilder: (ctx, index) {
                               final song = player.queue[index];
                               final isCurrent = player.currentSong?.id == song.id;
 
-                              return InkWell(
-                                onTap: () => player.playSong(song, index: index),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              return Container(
+                                key: ValueKey('queue_${song.id}_$index'),
+                                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
                                   color: isCurrent
                                       ? theme.primaryColor.withValues(alpha: 0.15)
                                       : Colors.transparent,
-                                  child: Row(
-                                    children: [
-                                      // Index or Playing indicator
-                                      SizedBox(
-                                        width: 24,
-                                        child: isCurrent
-                                            ? Icon(Icons.volume_up_rounded, size: 16, color: theme.primaryColor)
-                                            : Text(
-                                                '${index + 1}',
-                                                style: const TextStyle(color: Colors.white38, fontSize: 11),
-                                              ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      // Title + Artist
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              song.name,
-                                              style: TextStyle(
-                                                color: isCurrent ? theme.primaryColor : Colors.white,
-                                                fontSize: 13,
-                                                fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              song.artistText,
-                                              style: const TextStyle(
-                                                color: Colors.white38,
-                                                fontSize: 11,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () => player.playSong(song, index: index),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    child: Row(
+                                      children: [
+                                        // Index or Playing indicator
+                                        SizedBox(
+                                          width: 22,
+                                          child: isCurrent
+                                              ? Icon(Icons.volume_up_rounded, size: 16, color: theme.primaryColor)
+                                              : Text(
+                                                  '${index + 1}',
+                                                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                                ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      // Duration
-                                      Text(
-                                        song.durationText,
-                                        style: const TextStyle(color: Colors.white38, fontSize: 11),
-                                      ),
-                                    ],
+                                        const SizedBox(width: 8),
+                                        // Title + Artist
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                song.name,
+                                                style: TextStyle(
+                                                  color: isCurrent ? theme.primaryColor : Colors.white,
+                                                  fontSize: 13,
+                                                  fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                song.artistText,
+                                                style: const TextStyle(
+                                                  color: Colors.white38,
+                                                  fontSize: 11,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        // Duration
+                                        Text(
+                                          song.durationText,
+                                          style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        // Remove button
+                                        IconButton(
+                                          icon: const Icon(Icons.close_rounded, size: 14, color: Colors.white24),
+                                          onPressed: () => player.removeFromQueue(index),
+                                          tooltip: '从队列中移除',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                        ),
+                                        // Drag reorder handle
+                                        ReorderableDragStartListener(
+                                          index: index,
+                                          child: const MouseRegion(
+                                            cursor: SystemMouseCursors.grab,
+                                            child: Padding(
+                                              padding: EdgeInsets.symmetric(horizontal: 4),
+                                              child: Icon(
+                                                Icons.drag_indicator_rounded,
+                                                size: 16,
+                                                color: Colors.white24,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               );

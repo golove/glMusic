@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/music.dart';
 import '../providers/player_provider.dart';
 import '../services/rust_core_service.dart';
+import '../components/hover_play_card.dart';
 
 class BrowseView extends StatefulWidget {
   const BrowseView({super.key});
@@ -80,38 +80,19 @@ class _BrowseViewState extends State<BrowseView> {
               itemCount: officialCharts.length,
               itemBuilder: (ctx, index) {
                 final pl = officialCharts[index];
-                return InkWell(
+                return HoverPlayCard(
+                  title: pl.name,
+                  subtitle: pl.description,
+                  imageUrl: pl.coverImgUrl,
                   onTap: () => player.navigateTo('playlistDetail', id: pl.id, meta: pl),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: CachedNetworkImage(
-                            imageUrl: pl.coverImgUrl,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        pl.name,
-                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (pl.description != null && pl.description!.isNotEmpty)
-                        Text(
-                          pl.description!,
-                          style: const TextStyle(color: Colors.white38, fontSize: 11),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
+                  onPlay: () async {
+                    try {
+                      final (_, songs) = await _core.getPlaylistDetail(pl.id);
+                      if (songs.isNotEmpty) {
+                        player.playSong(songs[0], newQueue: songs, index: 0);
+                      }
+                    } catch (_) {}
+                  },
                 );
               },
             );
@@ -148,31 +129,18 @@ class _BrowseViewState extends State<BrowseView> {
               itemCount: globalCharts.length,
               itemBuilder: (ctx, index) {
                 final pl = globalCharts[index];
-                return InkWell(
+                return HoverPlayCard(
+                  title: pl.name,
+                  imageUrl: pl.coverImgUrl,
                   onTap: () => player.navigateTo('playlistDetail', id: pl.id, meta: pl),
-                  borderRadius: BorderRadius.circular(10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: CachedNetworkImage(
-                            imageUrl: pl.coverImgUrl,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        pl.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-                      ),
-                    ],
-                  ),
+                  onPlay: () async {
+                    try {
+                      final (_, songs) = await _core.getPlaylistDetail(pl.id);
+                      if (songs.isNotEmpty) {
+                        player.playSong(songs[0], newQueue: songs, index: 0);
+                      }
+                    } catch (_) {}
+                  },
                 );
               },
             );

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -19,8 +20,11 @@ import 'views/home_view.dart';
 import 'views/daily_recommend_view.dart';
 import 'views/playlist_square_view.dart';
 import 'views/browse_view.dart';
+import 'views/radio_view.dart';
 import 'views/search_view.dart';
 import 'views/playlist_detail_view.dart';
+import 'views/album_detail_view.dart';
+import 'views/artist_detail_view.dart';
 import 'views/history_view.dart';
 import 'views/favorites_view.dart';
 
@@ -37,6 +41,10 @@ class AppHttpOverrides extends HttpOverrides {
 void main() async {
   HttpOverrides.global = AppHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Limit in-memory image cache to avoid memory bloat
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 128 * 1024 * 1024; // 128 MB
+  PaintingBinding.instance.imageCache.maximumSize = 300;
 
   // Desktop window configuration
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
@@ -93,6 +101,17 @@ class GLMusicApp extends StatelessWidget {
         ),
         fontFamily: Platform.isWindows ? 'Microsoft YaHei' : 'PingFang SC',
         useMaterial3: true,
+        // Apple style sleek scrollbars
+        scrollbarTheme: ScrollbarThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.hovered) || states.contains(WidgetState.dragged)) {
+              return Colors.white.withValues(alpha: 0.35);
+            }
+            return Colors.white.withValues(alpha: 0.15);
+          }),
+          radius: const Radius.circular(8),
+          thickness: WidgetStateProperty.all(6),
+        ),
       ),
       home: const MainShell(),
     );
@@ -106,57 +125,114 @@ class MainShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // 1. Dynamic Bokeh Atmosphere Background
-          const Positioned.fill(
-            child: NightBokehBackground(),
-          ),
-
-          // 2. Main Window Layout
-          Column(
+    // Global desktop shortcuts
+    return CallbackShortcuts(
+      bindings: {
+        // Space -> Toggle Play / Pause
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          // Only if not focused on text field
+          final focus = FocusManager.instance.primaryFocus;
+          if (focus == null || focus.context?.widget is! EditableText) {
+            player.togglePlayPause();
+          }
+        },
+        // Cmd/Ctrl + Right -> Next Track
+        const SingleActivator(LogicalKeyboardKey.arrowRight, control: true): player.next,
+        const SingleActivator(LogicalKeyboardKey.arrowRight, meta: true): player.next,
+        // Cmd/Ctrl + Left -> Prev Track
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true): player.previous,
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true): player.previous,
+        // Cmd/Ctrl + Up -> Volume Up
+        const SingleActivator(LogicalKeyboardKey.arrowUp, control: true): () {
+          player.setVolume((player.volume + 0.05).clamp(0.0, 1.0));
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowUp, meta: true): () {
+          player.setVolume((player.volume + 0.05).clamp(0.0, 1.0));
+        },
+        // Cmd/Ctrl + Down -> Volume Down
+        const SingleActivator(LogicalKeyboardKey.arrowDown, control: true): () {
+          player.setVolume((player.volume - 0.05).clamp(0.0, 1.0));
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowDown, meta: true): () {
+          player.setVolume((player.volume - 0.05).clamp(0.0, 1.0));
+        },
+        // Cmd/Ctrl + L -> Toggle Lyrics
+        const SingleActivator(LogicalKeyboardKey.keyL, control: true): player.toggleLyrics,
+        const SingleActivator(LogicalKeyboardKey.keyL, meta: true): player.toggleLyrics,
+        // Esc -> Close lyrics or queue
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (player.isShowingLyrics) {
+            player.toggleLyrics(false);
+          } else if (player.isShowingQueue) {
+            player.toggleQueue(false);
+          }
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Stack(
             children: [
-              // Top Title Bar & Window Drag Header
-              const TitleBar(),
-
-              // Body: Sidebar + Dynamic Content
-              Expanded(
-                child: Row(
-                  children: [
-                    // Sidebar
-                    const Sidebar(),
-
-                    // Main Content Canvas
-                    Expanded(
-                      child: Stack(
-                        children: [
-                          // View Switcher
-                          Positioned.fill(
-                            child: _resolveView(player.currentNav),
-                          ),
-
-                          // Floating Apple Music Player Bar Capsule
-                          const Align(
-                            alignment: Alignment.bottomCenter,
-                            child: PlayerBar(),
-                          ),
-
-                          // Queue Drawer Popover
-                          const QueueDrawer(),
-                        ],
-                      ),
-                    ),
-                  ],
+              // 1. Dynamic Bokeh Atmosphere Background with RepaintBoundary isolation
+              const Positioned.fill(
+                child: RepaintBoundary(
+                  child: NightBokehBackground(),
                 ),
               ),
+
+              // 2. Main Window Layout
+              Column(
+                children: [
+                  // Top Title Bar & Window Drag Header
+                  const TitleBar(),
+
+                  // Body: Sidebar + Dynamic Content
+                  Expanded(
+                    child: Row(
+                      children: [
+                        // Sidebar
+                        const Sidebar(),
+
+                        // Main Content Canvas
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              // View Switcher with smooth subtle cross-fade
+                              Positioned.fill(
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 200),
+                                  switchInCurve: Curves.easeOut,
+                                  switchOutCurve: Curves.easeIn,
+                                  child: KeyedSubtree(
+                                    key: ValueKey('${player.currentNav.route}_${player.currentNav.id ?? 0}'),
+                                    child: _resolveView(player.currentNav),
+                                  ),
+                                ),
+                              ),
+
+                              // Floating Apple Music Player Bar Capsule
+                              const Align(
+                                alignment: Alignment.bottomCenter,
+                                child: PlayerBar(),
+                              ),
+
+                              // Queue Drawer Popover
+                              const QueueDrawer(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              // 3. Fullscreen Synced Lyrics Overlay
+              const LyricsOverlay(),
             ],
           ),
-
-          // 3. Fullscreen Synced Lyrics Overlay
-          const LyricsOverlay(),
-        ],
+        ),
       ),
     );
   }
@@ -171,12 +247,24 @@ class MainShell extends StatelessWidget {
         return const PlaylistSquareView();
       case 'browse':
         return const BrowseView();
+      case 'radio':
+        return const RadioView();
       case 'search':
         return const SearchView();
       case 'playlistDetail':
         return PlaylistDetailView(
           playlistId: nav.id ?? 0,
           initialPlaylist: nav.meta is Playlist ? nav.meta as Playlist : null,
+        );
+      case 'albumDetail':
+        return AlbumDetailView(
+          albumId: nav.id ?? 0,
+          initialAlbum: nav.meta is Album ? nav.meta as Album : null,
+        );
+      case 'artistDetail':
+        return ArtistDetailView(
+          artistId: nav.id ?? 0,
+          initialArtist: nav.meta is Artist ? nav.meta as Artist : null,
         );
       case 'history':
         return const HistoryView();

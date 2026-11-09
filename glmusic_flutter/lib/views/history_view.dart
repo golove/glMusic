@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/player_provider.dart';
-import '../providers/theme_provider.dart';
+import '../components/song_row.dart';
 
 class HistoryView extends StatelessWidget {
   const HistoryView({super.key});
@@ -10,7 +9,6 @@ class HistoryView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
-    final theme = context.watch<ThemeProvider>();
     final songs = player.history;
 
     return ListView(
@@ -67,11 +65,12 @@ class HistoryView extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: const [
-                SizedBox(width: 36, child: Text('#', style: TextStyle(color: Colors.white38, fontSize: 12))),
+                SizedBox(width: 34, child: Text('#', style: TextStyle(color: Colors.white38, fontSize: 12))),
+                SizedBox(width: 48),
                 Expanded(flex: 5, child: Text('歌曲', style: TextStyle(color: Colors.white38, fontSize: 12))),
                 Expanded(flex: 3, child: Text('歌手', style: TextStyle(color: Colors.white38, fontSize: 12))),
                 Expanded(flex: 4, child: Text('专辑', style: TextStyle(color: Colors.white38, fontSize: 12))),
-                SizedBox(width: 80, child: Text('时长', style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.right)),
+                SizedBox(width: 90, child: Text('时长', style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.right)),
               ],
             ),
           ),
@@ -83,96 +82,12 @@ class HistoryView extends StatelessWidget {
             itemCount: songs.length,
             itemBuilder: (ctx, index) {
               final song = songs[index];
-              final isCurrent = player.currentSong?.id == song.id;
-
-              return InkWell(
-                onTap: () => player.playSong(song, newQueue: songs, index: index),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isCurrent
-                        ? theme.primaryColor.withValues(alpha: 0.12)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 36,
-                        child: isCurrent && player.isPlaying
-                            ? Icon(Icons.volume_up_rounded, size: 16, color: theme.primaryColor)
-                            : Text('${index + 1}', style: const TextStyle(color: Colors.white38, fontSize: 13)),
-                      ),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: CachedNetworkImage(
-                          imageUrl: song.album.picUrl,
-                          width: 38,
-                          height: 38,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, _, _) => Container(color: Colors.white10),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 5,
-                        child: Text(
-                          song.name,
-                          style: TextStyle(
-                            color: isCurrent ? theme.primaryColor : Colors.white,
-                            fontSize: 13,
-                            fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: Text(
-                          song.artistText,
-                          style: const TextStyle(color: Colors.white54, fontSize: 12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Expanded(
-                        flex: 4,
-                        child: Text(
-                          song.album.name,
-                          style: const TextStyle(color: Colors.white38, fontSize: 12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      SizedBox(
-                        width: 80,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                player.likedSongIds.contains(song.id)
-                                    ? Icons.favorite_rounded
-                                    : Icons.favorite_border_rounded,
-                                size: 16,
-                                color: player.likedSongIds.contains(song.id)
-                                    ? theme.primaryColor
-                                    : Colors.white38,
-                              ),
-                              onPressed: () => player.toggleLike(song),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(song.durationText, style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              return SongRow(
+                index: index,
+                song: song,
+                queue: songs,
+                showAlbum: true,
+                showCover: true,
               );
             },
           ),

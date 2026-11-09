@@ -200,56 +200,87 @@ class PlayerBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Row: Song Name, Quality Badge, Artist
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      song.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Quality Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: theme.primaryColor.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: theme.primaryColor.withValues(alpha: 0.4),
-                        width: 0.6,
+              // Row: Song Name or Warning Message
+              if (player.playbackErrorMessage != null)
+                Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded, color: Colors.amberAccent, size: 14),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        player.playbackErrorMessage!,
+                        style: const TextStyle(
+                          color: Colors.amberAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    child: Text(
-                      player.soundQuality.label,
-                      style: TextStyle(
-                        color: theme.primaryColor,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        song.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      song.artistText,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 11,
+                    const SizedBox(width: 8),
+                    // Quality Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: theme.primaryColor.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: theme.primaryColor.withValues(alpha: 0.4),
+                          width: 0.6,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      child: Text(
+                        player.soundQuality.label,
+                        style: TextStyle(
+                          color: theme.primaryColor,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (song.artists.isNotEmpty) {
+                              final a = song.artists[0];
+                              player.navigateTo('artistDetail', id: a.id, meta: a);
+                            }
+                          },
+                          child: Text(
+                            song.artistText,
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
 
               const SizedBox(height: 4),
 
@@ -389,15 +420,22 @@ class PlayerBar extends StatelessWidget {
 
         const SizedBox(width: 6),
 
-        // Volume control
-        Icon(
-          player.volume == 0
-              ? Icons.volume_off_rounded
-              : player.volume < 0.5
-                  ? Icons.volume_down_rounded
-                  : Icons.volume_up_rounded,
-          size: 18,
-          color: Colors.white60,
+        // Volume control with Mute Toggle
+        IconButton(
+          icon: Icon(
+            player.isMuted
+                ? Icons.volume_off_rounded
+                : player.volume < 0.5
+                    ? Icons.volume_down_rounded
+                    : Icons.volume_up_rounded,
+            size: 18,
+            color: player.isMuted ? Colors.white38 : Colors.white70,
+          ),
+          onPressed: player.toggleMute,
+          tooltip: player.isMuted ? '取消静音' : '静音',
+          splashRadius: 16,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
         ),
         SizedBox(
           width: 80,

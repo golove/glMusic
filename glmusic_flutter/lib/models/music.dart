@@ -11,7 +11,7 @@ class Artist {
 
   factory Artist.fromJson(Map<String, dynamic> json) {
     return Artist(
-      id: json['id'] as int? ?? 0,
+      id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name'] as String? ?? '未知歌手',
       picUrl: (json['picUrl'] ?? json['img1v1Url'] ?? '') as String,
     );
@@ -41,11 +41,11 @@ class Album {
 
   factory Album.fromJson(Map<String, dynamic> json) {
     return Album(
-      id: json['id'] as int? ?? 0,
+      id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name'] as String? ?? '未知专辑',
       picUrl: (json['picUrl'] ?? '') as String,
       artist: json['artist'] != null ? Artist.fromJson(json['artist'] as Map<String, dynamic>) : null,
-      publishTime: json['publishTime'] as int?,
+      publishTime: (json['publishTime'] as num?)?.toInt(),
     );
   }
 
@@ -88,14 +88,14 @@ class Song {
     final rawAlbum = (raw['al'] ?? raw['album'] ?? {}) as Map<String, dynamic>;
     final album = Album.fromJson(rawAlbum);
 
-    final duration = (raw['dt'] ?? raw['duration'] ?? 0) as int;
+    final duration = ((raw['dt'] ?? raw['duration'] ?? 0) as num).toInt();
     final durSec = duration ~/ 1000;
     final min = durSec ~/ 60;
     final sec = durSec % 60;
     final durationText = '$min:${sec < 10 ? '0' : ''}$sec';
 
     return Song(
-      id: raw['id'] as int? ?? 0,
+      id: (raw['id'] as num?)?.toInt() ?? 0,
       name: (raw['name'] ?? '未知歌曲') as String,
       artists: artists,
       artistText: artistText,
@@ -111,12 +111,12 @@ class Song {
         .map((a) => Artist.fromJson(a as Map<String, dynamic>))
         .toList();
     return Song(
-      id: json['id'] as int? ?? 0,
+      id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name'] as String? ?? '未知歌曲',
       artists: artists,
       artistText: json['artistText'] as String? ?? '',
       album: Album.fromJson((json['album'] ?? {}) as Map<String, dynamic>),
-      duration: json['duration'] as int? ?? 0,
+      duration: ((json['duration'] ?? 0) as num).toInt(),
       durationText: json['durationText'] as String? ?? '0:00',
       url: json['url'] as String?,
     );
@@ -155,12 +155,12 @@ class Playlist {
 
   factory Playlist.fromJson(Map<String, dynamic> json) {
     return Playlist(
-      id: json['id'] as int? ?? 0,
+      id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name'] as String? ?? '精选歌单',
       coverImgUrl: (json['coverImgUrl'] ?? json['picUrl'] ?? '') as String,
-      description: json['description'] as String?,
-      playCount: json['playCount'] as int?,
-      trackCount: json['trackCount'] as int?,
+      description: (json['description'] ?? json['copywriter']) as String?,
+      playCount: (json['playCount'] as num?)?.toInt(),
+      trackCount: (json['trackCount'] as num?)?.toInt(),
       creator: json['creator'] as Map<String, dynamic>?,
     );
   }
@@ -184,8 +184,8 @@ class BannerItem {
   factory BannerItem.fromJson(Map<String, dynamic> json) {
     return BannerItem(
       imageUrl: (json['pic'] ?? json['imageUrl'] ?? '') as String,
-      targetId: json['targetId'] as int?,
-      targetType: json['targetType'] as int?,
+      targetId: (json['targetId'] as num?)?.toInt(),
+      targetType: (json['targetType'] as num?)?.toInt(),
       typeTitle: json['typeTitle'] as String? ?? '推荐',
       url: json['url'] as String?,
     );

@@ -24,7 +24,18 @@ import 'views/playlist_detail_view.dart';
 import 'views/history_view.dart';
 import 'views/favorites_view.dart';
 
+class AppHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    client.userAgent =
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    return client;
+  }
+}
+
 void main() async {
+  HttpOverrides.global = AppHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
 
   // Desktop window configuration

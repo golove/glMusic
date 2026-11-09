@@ -56,6 +56,18 @@ jobs:
           # Copy glmusic-core.exe next to glmusic.exe
           cp glmusic_flutter/rust/target/release/glmusic-core.exe "$RELEASE_DIR/"
 
+          # Copy MSVC runtime DLLs so the package is 100% standalone on clean Windows / VMs
+          MSVC_REDIST=$(find "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Redist/MSVC" -type d -name "Microsoft.VC*.CRT" -path "*/x64/*" 2>/dev/null | tail -n 1)
+          if [ -n "$MSVC_REDIST" ] && [ -d "$MSVC_REDIST" ]; then
+            echo "Copying MSVC redist DLLs from: $MSVC_REDIST"
+            cp -v "$MSVC_REDIST"/*.dll "$RELEASE_DIR/"
+          else
+            echo "Fallback copying MSVC DLLs from System32"
+            for dll in vcruntime140.dll vcruntime140_1.dll msvcp140.dll msvcp140_1.dll msvcp140_2.dll msvcp140_atomic_wait.dll msvcp140_codecvt_ids.dll; do
+              [ -f "/c/Windows/System32/$dll" ] && cp -v "/c/Windows/System32/$dll" "$RELEASE_DIR/"
+            done
+          fi
+
           # Compress Release folder to zip located in root GITHUB_WORKSPACE
           cd "$RELEASE_DIR"
           7z a -tzip -mx=9 "$GITHUB_WORKSPACE/glmusic-windows-x64.zip" *

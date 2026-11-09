@@ -46,12 +46,22 @@ jobs:
       - name: Bundle Rust Core & Package App
         shell: bash
         run: |
+          # Find release folder containing glmusic.exe
+          RELEASE_DIR="glmusic_flutter/build/windows/x64/runner/Release"
+          if [ ! -d "$RELEASE_DIR" ]; then
+            RELEASE_DIR=$(find glmusic_flutter/build/windows -type f -name "glmusic.exe" -exec dirname {} \; | head -n 1)
+          fi
+          echo "Target Release directory: $RELEASE_DIR"
+
           # Copy glmusic-core.exe next to glmusic.exe
-          cp glmusic_flutter/rust/target/release/glmusic-core.exe glmusic_flutter/build/windows/x64/runner/Release/
+          cp glmusic_flutter/rust/target/release/glmusic-core.exe "$RELEASE_DIR/"
+
+          # Compress Release folder to zip located in root GITHUB_WORKSPACE
+          cd "$RELEASE_DIR"
+          7z a -tzip -mx=9 "$GITHUB_WORKSPACE/glmusic-windows-x64.zip" *
           
-          # Compress Release folder to zip
-          cd glmusic_flutter/build/windows/x64/runner/Release
-          7z a -tzip -mx=9 ../../../../../glmusic-windows-x64.zip *
+          # Verify file exists
+          ls -lh "$GITHUB_WORKSPACE/glmusic-windows-x64.zip"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4

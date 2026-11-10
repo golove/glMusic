@@ -11,38 +11,110 @@ import AppKit
 import CoreImage
 import NeteaseCloudMusicAPI
 
-// MARK: - API Cache Layer
+// MARK: - API Cache Layer (L1 内存 + L2 磁盘二级缓存体系)
 
 actor APICache {
     static let shared = APICache()
 
-    private struct CacheEntry {
+    private struct MemoryEntry {
         let data: Any
         let expiration: Date
     }
 
-    private var storage: [String: CacheEntry] = [:]
+    private struct DiskEntry: Codable {
+        let rawData: Data
+        let expiration: Date
+    }
+
+    private var storage: [String: MemoryEntry] = [:]
+    private let diskCacheDirectory: URL
+
+    private init() {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = caches.appendingPathComponent("APICache", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        self.diskCacheDirectory = dir
+    }
+
+    private func fileURL(for key: String) -> URL {
+        let safeKey = key
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+            .replacingOccurrences(of: "?", with: "_")
+            .replacingOccurrences(of: "&", with: "_")
+        return diskCacheDirectory.appendingPathComponent("\(safeKey).cache")
+    }
 
     func get<T>(_ key: String) -> T? {
-        guard let entry = storage[key] else { return nil }
-        if Date() < entry.expiration {
-            return entry.data as? T
-        } else {
-            storage.removeValue(forKey: key)
-            return nil
+        // 1. 优先从 L1 内存缓存命中
+        if let entry = storage[key] {
+            if Date() < entry.expiration {
+                return entry.data as? T
+            } else {
+                storage.removeValue(forKey: key)
+                removeDiskCache(for: key)
+                return nil
+            }
         }
+
+        // 2. 从 L2 磁盘缓存查询并回填
+        if let decodableType = T.self as? any Decodable.Type {
+            let targetURL = fileURL(for: key)
+            if FileManager.default.fileExists(atPath: targetURL.path),
+               let fileData = try? Data(contentsOf: targetURL),
+               let diskEntry = try? JSONDecoder().decode(DiskEntry.self, from: fileData) {
+                if Date() < diskEntry.expiration {
+                    if let decoded = try? JSONDecoder().decode(decodableType, from: diskEntry.rawData) as? T {
+                        storage[key] = MemoryEntry(data: decoded, expiration: diskEntry.expiration)
+                        return decoded
+                    }
+                } else {
+                    try? FileManager.default.removeItem(at: targetURL)
+                }
+            }
+        }
+
+        return nil
     }
 
     func set<T>(_ key: String, value: T, ttl: TimeInterval) {
-        storage[key] = CacheEntry(data: value, expiration: Date().addingTimeInterval(ttl))
+        let expiration = Date().addingTimeInterval(ttl)
+        // 1. 写入 L1 内存
+        storage[key] = MemoryEntry(data: value, expiration: expiration)
+
+        // 2. 异步序列化写入 L2 磁盘缓存
+        if let encodableVal = value as? any Encodable {
+            let targetURL = fileURL(for: key)
+            Task.detached(priority: .background) {
+                if let rawData = try? JSONEncoder().encode(encodableVal) {
+                    let diskEntry = DiskEntry(rawData: rawData, expiration: expiration)
+                    if let entryData = try? JSONEncoder().encode(diskEntry) {
+                        try? entryData.write(to: targetURL, options: .atomic)
+                    }
+                }
+            }
+        }
     }
 
     func remove(_ key: String) {
         storage.removeValue(forKey: key)
+        removeDiskCache(for: key)
+    }
+
+    private func removeDiskCache(for key: String) {
+        let targetURL = fileURL(for: key)
+        try? FileManager.default.removeItem(at: targetURL)
     }
 
     func clearAll() {
         storage.removeAll()
+        if let files = try? FileManager.default.contentsOfDirectory(at: diskCacheDirectory, includingPropertiesForKeys: nil) {
+            for f in files {
+                try? FileManager.default.removeItem(at: f)
+            }
+        }
     }
 }
 

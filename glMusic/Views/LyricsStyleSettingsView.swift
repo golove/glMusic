@@ -374,46 +374,29 @@ struct KaraokeLyricLineView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            // 底层未点亮文字
+        if isActive && progress > 0 {
+            let safeProgress = min(1.0, max(0.0, progress))
+            let feather = 0.015
             Text(text)
                 .font(font)
                 .multilineTextAlignment(textAlignment)
-                .foregroundStyle(inactiveColor)
-
-            // 高亮扫光层：当当前行活跃时，根据实时进度渐变填充 (仅点亮文字本身，带主题渐变色，去除一切外框荧光笔阴影色块)
-            if isActive {
-                Text(text)
-                    .font(font)
-                    .multilineTextAlignment(textAlignment)
-                    .foregroundStyle(activeGradient)
-                    .mask(
-                        GeometryReader { textGeo in
-                            let textWidth = textGeo.size.width
-                            let feather: CGFloat = 14
-                            let totalDistance = textWidth + feather
-                            let currentPos = totalDistance * CGFloat(min(1.0, max(0.0, progress)))
-                            let solidWidth = max(0, currentPos - feather)
-                            let gradientWidth = min(feather, currentPos)
-
-                            HStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.black)
-                                    .frame(width: solidWidth)
-
-                                LinearGradient(
-                                    colors: [Color.black, Color.clear],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                                .frame(width: gradientWidth)
-
-                                Spacer(minLength: 0)
-                            }
-                        }
+                .foregroundStyle(
+                    LinearGradient(
+                        stops: [
+                            .init(color: themeManager.accentColor, location: 0),
+                            .init(color: themeManager.accentColor, location: max(0, safeProgress - feather)),
+                            .init(color: inactiveColor, location: min(1.0, safeProgress + feather)),
+                            .init(color: inactiveColor, location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
-                    .animation(.linear(duration: 0.05), value: progress)
-            }
+                )
+        } else {
+            Text(text)
+                .font(font)
+                .multilineTextAlignment(textAlignment)
+                .foregroundStyle(isActive ? AnyShapeStyle(activeGradient) : AnyShapeStyle(inactiveColor))
         }
     }
 }

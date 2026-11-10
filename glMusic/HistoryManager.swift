@@ -143,12 +143,21 @@ final class HistoryManager {
         self.historyItems = items
     }
 
+    private var saveTask: Task<Void, Never>?
+
     private func saveHistory() {
-        do {
-            let data = try JSONEncoder().encode(historyItems)
-            try data.write(to: fileURL, options: [.atomic])
-        } catch {
-            print("❌ 保存播放历史失败: \(error)")
+        let itemsToSave = historyItems
+        let targetURL = fileURL
+        saveTask?.cancel()
+        saveTask = Task.detached(priority: .background) {
+            do {
+                let data = try JSONEncoder().encode(itemsToSave)
+                try data.write(to: targetURL, options: [.atomic])
+            } catch {
+                #if DEBUG
+                print("❌ 保存播放历史异步写入失败: \(error)")
+                #endif
+            }
         }
     }
 }

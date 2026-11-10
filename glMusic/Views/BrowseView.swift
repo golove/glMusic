@@ -10,8 +10,8 @@ import SwiftUI
 /// 榜单浏览视图
 struct BrowseView: View {
     @Binding var selection: String?
-    @State private var charts: [APIPlaylist] = []
-    @State private var isLoading = true
+    @State private var charts: [APIPlaylist] = BrowseDataCache.shared.cachedData?.charts ?? []
+    @State private var isLoading = BrowseDataCache.shared.cachedData == nil
 
     init(selection: Binding<String?>? = nil) {
         self._selection = selection ?? .constant("browse")
@@ -52,12 +52,45 @@ struct BrowseView: View {
     }
 
     private func loadCharts() async {
-        isLoading = true
+        if let cached = BrowseDataCache.shared.cachedData, BrowseDataCache.shared.isFresh {
+            if charts.isEmpty {
+                charts = cached.charts
+            }
+            isLoading = false
+            return
+        }
+
+        if charts.isEmpty {
+            isLoading = true
+        }
         do {
-            charts = try await NetworkManager.shared.toplist()
+            let fetched = try await NetworkManager.shared.toplist()
+            charts = fetched
+            BrowseDataCache.shared.save(charts: fetched)
         } catch {
             print("BrowseView error: \(error)")
         }
         isLoading = false
+    }
+}
+
+// MARK: - 榜单数据常驻内存缓存
+
+@MainActor
+final class BrowseDataCache {
+    static let shared = BrowseDataCache()
+    struct CachePayload {
+        let charts: [APIPlaylist]
+        let timestamp: Date
+    }
+    private(set) var cachedData: CachePayload?
+
+    var isFresh: Bool {
+        guard let data = cachedData else { return false }
+        return Date().timeIntervalSince(data.timestamp) < 600 // 10分钟新鲜期
+    }
+
+    func save(charts: [APIPlaylist]) {
+        cachedData = CachePayload(charts: charts, timestamp: Date())
     }
 }

@@ -469,6 +469,9 @@ private struct HistoryRowView: View {
                 Label("添加到播放列表".localized, systemImage: "text.badge.plus")
             }
 
+            // MARK: - 添加到自建歌单
+            AddToPlaylistMenu(song: song)
+
             Divider()
 
             Button {

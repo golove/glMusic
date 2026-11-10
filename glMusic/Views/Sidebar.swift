@@ -17,6 +17,10 @@ struct Sidebar: View {
     @State private var showLogin = false
     @State private var userPlaylists: [APIPlaylist] = []  // 用户创建的歌单
     @State private var subscribedPlaylists: [APIPlaylist] = []  // 收藏的歌单
+    private var customPlaylistManager = CustomPlaylistManager.shared
+    @State private var showCreatePlaylistSheet = false
+    @State private var newPlaylistName = ""
+    @State private var newPlaylistDesc = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,6 +46,61 @@ struct Sidebar: View {
                                 .foregroundStyle(themeManager.accentColor)
                         }
                         .tag(item.id)
+                    }
+                }
+
+                // MARK: - 自建歌单
+                Section {
+                    ForEach(customPlaylistManager.playlists) { pl in
+                        Label {
+                            Text(pl.name)
+                                .lineLimit(1)
+                        } icon: {
+                            if let cover = pl.coverUrl, !cover.isEmpty {
+                                AsyncImage(url: URL(string: cover)) { phase in
+                                    switch phase {
+                                    case .success(let img):
+                                        img.resizable().aspectRatio(contentMode: .fill)
+                                    default:
+                                        Image(systemName: "music.note.list")
+                                            .foregroundStyle(themeManager.accentColor)
+                                    }
+                                }
+                                .frame(width: 20, height: 20)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                            } else {
+                                Image(systemName: "music.note.list")
+                                    .foregroundStyle(themeManager.accentColor)
+                                    .frame(width: 20, height: 20)
+                            }
+                        }
+                        .tag("playlist_custom_\(pl.id)")
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                if selection == "playlist_custom_\(pl.id)" {
+                                    selection = "home"
+                                }
+                                customPlaylistManager.deletePlaylist(id: pl.id)
+                            } label: {
+                                Label("删除歌单".localized, systemImage: "trash")
+                            }
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("自建歌单".localized)
+                        Spacer()
+                        Button {
+                            newPlaylistName = ""
+                            newPlaylistDesc = ""
+                            showCreatePlaylistSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("新建歌单".localized)
                     }
                 }
 
@@ -107,6 +166,50 @@ struct Sidebar: View {
                 // 登录成功后立即加载歌单
                 Task { await loadUserPlaylists(uid: profile.userId) }
             }
+        }
+        .sheet(isPresented: $showCreatePlaylistSheet) {
+            VStack(spacing: 16) {
+                Text("新建歌单".localized)
+                    .font(.headline)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("歌单名称".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("例如：我的最爱、工作沉浸...".localized, text: $newPlaylistName)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("歌单描述 (可选)".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("简要描述歌单主题".localized, text: $newPlaylistDesc)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                HStack {
+                    Button("取消".localized) {
+                        showCreatePlaylistSheet = false
+                    }
+                    .keyboardShortcut(.cancelAction)
+
+                    Spacer()
+
+                    Button("创建".localized) {
+                        let pl = customPlaylistManager.createPlaylist(name: newPlaylistName, description: newPlaylistDesc)
+                        selection = "playlist_custom_\(pl.id)"
+                        showCreatePlaylistSheet = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(themeManager.accentColor)
+                    .disabled(newPlaylistName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.top, 8)
+            }
+            .padding(20)
+            .frame(width: 320)
         }
         .task { await checkLoginStatus() }
         .onChange(of: showLogin) {

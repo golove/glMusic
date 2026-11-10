@@ -7,13 +7,55 @@
 
 import SwiftUI
 
+// MARK: - Search History Manager
+
+@MainActor
+@Observable
+final class SearchHistoryManager {
+    static let shared = SearchHistoryManager()
+
+    var history: [String] = []
+    private let key = "search_history_items"
+    private let maxCount = 20
+
+    private init() {
+        history = UserDefaults.standard.stringArray(forKey: key) ?? []
+    }
+
+    func add(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        history.removeAll { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+        history.insert(trimmed, at: 0)
+        if history.count > maxCount {
+            history = Array(history.prefix(maxCount))
+        }
+        UserDefaults.standard.set(history, forKey: key)
+    }
+
+    func remove(_ query: String) {
+        history.removeAll { $0 == query }
+        UserDefaults.standard.set(history, forKey: key)
+    }
+
+    func clear() {
+        history.removeAll()
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
+
+// MARK: - Search View
+
 struct SearchView: View {
     @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
     @State private var searchText = ""
     @State private var results: [APISong] = []
     @State private var hotSearches: [HotSearchItem] = []
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var historyManager = SearchHistoryManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -35,8 +77,12 @@ struct SearchView: View {
                     ProgressView().controlSize(.small)
                 }
                 if !searchText.isEmpty {
-                    Button { searchText = ""; results = [] } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    Button {
+                        searchText = ""
+                        results = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -48,43 +94,115 @@ struct SearchView: View {
                 searchTask?.cancel()
                 searchTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
-                    if !Task.isCancelled && !searchText.isEmpty {
+                    if !Task.isCancelled && !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
                         performSearch()
                     }
                 }
             }
 
             if searchText.isEmpty {
-                // Hot searches
-                if !hotSearches.isEmpty {
-                    Text("热门搜索".localized)
-                        .font(.title3.bold())
-                        .padding(.horizontal, 24)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // 1. 最近搜索历史 (Search History)
+                        if !historyManager.history.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("最近搜索".localized)
+                                        .font(.title3.bold())
 
-                    FlowLayout(spacing: 8) {
-                        ForEach(hotSearches.prefix(15)) { item in
-                            Button {
-                                searchText = item.searchWord
-                                performSearch()
-                            } label: {
-                                Text(item.searchWord)
-                                    .font(.system(size: 13))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 7)
-                                    .background(.quaternary, in: Capsule())
+                                    Spacer()
+
+                                    Button {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            historyManager.clear()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "trash")
+                                                .font(.system(size: 11))
+                                            Text("清空历史".localized)
+                                                .font(.system(size: 11, weight: .medium))
+                                        }
+                                        .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                FlowLayout(spacing: 8) {
+                                    ForEach(historyManager.history, id: \.self) { item in
+                                        HStack(spacing: 5) {
+                                            Button {
+                                                searchText = item
+                                                performSearch()
+                                            } label: {
+                                                Text(item)
+                                                    .font(.system(size: 13))
+                                                    .foregroundStyle(.primary)
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            Button {
+                                                withAnimation(.easeInOut(duration: 0.15)) {
+                                                    historyManager.remove(item)
+                                                }
+                                            } label: {
+                                                Image(systemName: "xmark")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundStyle(.tertiary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .padding(.leading, 12)
+                                        .padding(.trailing, 8)
+                                        .padding(.vertical, 6)
+                                        .background(.quaternary, in: Capsule())
+                                    }
+                                }
                             }
-                            .buttonStyle(.plain)
+                        }
+
+                        // 2. 热门搜索 (Hot Searches)
+                        if !hotSearches.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("热门搜索".localized)
+                                    .font(.title3.bold())
+
+                                FlowLayout(spacing: 8) {
+                                    ForEach(Array(hotSearches.prefix(15).enumerated()), id: \.element.id) { idx, item in
+                                        Button {
+                                            searchText = item.searchWord
+                                            performSearch()
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Text("\(idx + 1)")
+                                                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                                                    .foregroundStyle(idx < 3 ? themeManager.accentColor : Color.secondary)
+
+                                                Text(item.searchWord)
+                                                    .font(.system(size: 13))
+                                            }
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 7)
+                                            .background(.quaternary, in: Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 24)
+                    .padding(.bottom, 40)
                 }
             } else if results.isEmpty && !isSearching {
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 36)).foregroundStyle(.tertiary)
+                        .font(.system(size: 36))
+                        .foregroundStyle(.tertiary)
                     Text("没有找到结果".localized)
-                        .font(.headline).foregroundStyle(.secondary)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -106,8 +224,12 @@ struct SearchView: View {
     }
 
     private func performSearch() {
-        guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        let query = searchText
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+
+        // 保存到搜索历史
+        historyManager.add(query)
+
         Task {
             isSearching = true
             defer { isSearching = false }
@@ -128,7 +250,7 @@ struct SearchView: View {
     }
 }
 
-// MARK: - Flow Layout (for hot search tags)
+// MARK: - Flow Layout (for tags)
 
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8

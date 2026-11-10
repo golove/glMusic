@@ -38,7 +38,6 @@ struct BokehSpot: Identifiable {
 /// 城市夜景灯光流光氛围背景 (Night City Bokeh Ambient Background)
 struct NightBokehBackground: View {
     @Environment(ThemeManager.self) private var themeManager
-    @State private var isBreathing = false
 
     /// 19 个精心布局的夜景散景光斑（远景柔光、中景柔球、具象清晰光圈、近景晶莹亮点）
     private let spots: [BokehSpot] = [
@@ -90,20 +89,15 @@ struct NightBokehBackground: View {
                     endPoint: .center
                 )
 
-                // 3. 散落的夜景多重散景光斑（虚实交错）
-                ForEach(spots) { spot in
-                    let color = colorFor(type: spot.colorType)
-                    let centerPos = CGPoint(x: width * spot.xRatio, y: height * spot.yRatio)
-                    let currentOffset = isBreathing ? spot.driftRange : CGSize(
-                        width: -spot.driftRange.width * 0.7,
-                        height: -spot.driftRange.height * 0.7
-                    )
-                    let scale = isBreathing ? 1.05 : 0.95
+                // 3. 散落的夜景多重散景光斑（静态渲染，0 CPU 损耗）
+                ZStack {
+                    ForEach(spots) { spot in
+                        let color = colorFor(type: spot.colorType)
+                        let centerPos = CGPoint(x: width * spot.xRatio, y: height * spot.yRatio)
 
-                    renderSpotView(spot: spot, color: color)
-                        .scaleEffect(scale)
-                        .position(centerPos)
-                        .offset(currentOffset)
+                        renderSpotView(spot: spot, color: color)
+                            .position(centerPos)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -111,14 +105,6 @@ struct NightBokehBackground: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .animation(.easeInOut(duration: 0.35), value: themeManager.currentTheme)
-        .onAppear {
-            // 延迟启动呼吸动画，避免与页面入场 transition 竞争导致卡顿
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                withAnimation(.easeInOut(duration: 6.5).repeatForever(autoreverses: true)) {
-                    isBreathing = true
-                }
-            }
-        }
     }
 
     // MARK: - Spot View Renderer
@@ -127,12 +113,12 @@ struct NightBokehBackground: View {
     private func renderSpotView(spot: BokehSpot, color: Color) -> some View {
         switch spot.style {
         case .diffuseCloud, .softOrb:
-            // 柔和弥散光晕
+            // 柔和弥散光晕 (平滑四阶辐射渐变，单次着色器直接求值，彻底避免多通道高斯模糊卷积运算)
             RadialGradient(
                 colors: [
                     color.opacity(spot.baseOpacity),
                     color.opacity(spot.baseOpacity * 0.65),
-                    color.opacity(spot.baseOpacity * 0.15),
+                    color.opacity(spot.baseOpacity * 0.2),
                     Color.clear
                 ],
                 center: .center,
@@ -140,7 +126,6 @@ struct NightBokehBackground: View {
                 endRadius: spot.diameter / 2
             )
             .frame(width: spot.diameter, height: spot.diameter)
-            .blur(radius: spot.blurRadius)
 
         case .crispDisc:
             // 具象清晰光斑：圆盘形状清晰可见，边缘微亮（还原真实大光圈镜头边缘光圈环特征）
@@ -165,7 +150,6 @@ struct NightBokehBackground: View {
                     .strokeBorder(color.opacity(spot.baseOpacity * 1.55), lineWidth: 1.2)
             }
             .frame(width: spot.diameter, height: spot.diameter)
-            .blur(radius: spot.blurRadius) // 仅 1.5 ~ 2.2px 轻微虚化消除锯齿，圆形轮廓清晰分明
 
         case .sparklingPin:
             // 晶莹微光点：高亮核心
@@ -173,12 +157,10 @@ struct NightBokehBackground: View {
                 Circle()
                     .fill(color.opacity(spot.baseOpacity))
                     .frame(width: spot.diameter, height: spot.diameter)
-                    .blur(radius: spot.blurRadius)
 
                 Circle()
                     .fill(Color.white.opacity(spot.baseOpacity * 0.85))
                     .frame(width: spot.diameter * 0.38, height: spot.diameter * 0.38)
-                    .blur(radius: 1.0)
             }
         }
     }

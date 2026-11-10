@@ -95,166 +95,140 @@ struct PlayerBar: View {
     // MARK: - Controls (Center)
 
     private var controlsSection: some View {
-        @Bindable var player = player
-       
-       
-//        var isHover = false
-        return VStack(alignment:.leading,spacing:0) {
-           
-            HStack(spacing:8){
-                if let song = player.currentSong {
-                    // Album art from API
-                    
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            player.isShowingLyrics.toggle()
-                        }
-                    } label: {
-                        Group {
-                            if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
-                               let img = NSImage(contentsOf: localURL) {
-                                Image(nsImage: img)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } else {
-                                AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    default:
-                                        Rectangle().fill(.quaternary)
-                                            .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
-                                    }
-                                }
-                            }
-                        }
-                        .overlay(content: {
-                            if isHovering{
-                                Image(systemName: "arrow.down.left.and.arrow.up.right")
-                                .font(.system(size: 18))
-                                    
-                             
-                             }
-                        })
-                        .frame(width: 38, height: 38)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovering = h } }
-                    .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 0) {
+            songHeaderView
+                .frame(height: 38)
+                .padding(.top, 6)
 
-                    
-                    
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(song.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                        ArtistLinksView(
-                            artists: song.ar,
-                            fallbackText: song.displayArtist,
-                            fontSize: 11,
-                            weight: .regular,
-                            normalColor: .secondary,
-                            hoverColor: .primary
-                        ) { artistId in
-                            navigateToArtist(id: artistId)
-                        }
-                    }
-                    
-                    if player.isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-
-                    // MARK: - 音质选择 (SoundQualityType)
-                    Menu {
-                        ForEach(SoundQualityType.allCases, id: \.self) { quality in
-                            Button {
-                                player.soundQuality = quality
-                            } label: {
-                                HStack {
-                                    Text(quality.displayName)
-                                    if player.soundQuality == quality {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        Text(player.soundQuality.shortBadge)
-                            .font(.system(size: 13, weight: .regular))
-                            .lineLimit(1)
-                            .padding(.horizontal, 4.5)
-                            .padding(.vertical, 1.5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 3.5)
-                                    .stroke(themeManager.accentColor.opacity(0.85), lineWidth: 0.8)
-                                    .background(RoundedRectangle(cornerRadius: 3.5).fill(themeManager.accentColor.opacity(0.12)))
-                            )
-                            .foregroundStyle(themeManager.accentColor)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("音质选择：当前为 \(player.soundQuality.displayName)".localized)
-
-                    Button {
-                        player.toggleLike(for: song)
-                    } label: {
-                        Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
-                            .font(.system(size: 16))
-                            .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
-                    }
-                    .frame(width: 18, height: 18)
-                    .buttonStyle(.plain)
-                    .help((player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌").localized)
-
-                    // 下载此歌曲
-                    DownloadButton(song: song, iconSize: 16)
-                        .frame(width: 18, height: 18)
-
-                  
-                    
-                    
-                } else {
-                    RoundedRectangle(cornerRadius: 6)
-                       
-
-                        .fill(.quaternary)
-                        
-                        .frame(width: 38, height: 38)
-                       
-                    
-                                                .overlay(
-                            Image(systemName: "music.note")
-                                .font(.system(size: 20))
-                                .foregroundStyle(.tertiary)
-                        )
-                    
-                
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("未在播放".localized)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                
-                
-                
-            }
-            
-            .frame( height: 38)
-            .padding(.top,6)
-            
-
-            
-            
-
-            ProgressSlider(value: $player.progress, trackHeight: 3)
-//                .padding(.top,2)
+            PlayerProgressSliderView()
         }
         .frame(height: 42)
+    }
+
+    private var songHeaderView: some View {
+        HStack(spacing: 8) {
+            if let song = player.currentSong {
+                // Album art from API
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        player.isShowingLyrics.toggle()
+                    }
+                } label: {
+                    Group {
+                        if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
+                           let img = NSImage(contentsOf: localURL) {
+                            Image(nsImage: img)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image.resizable().aspectRatio(contentMode: .fill)
+                                default:
+                                    Rectangle().fill(.quaternary)
+                                        .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
+                                }
+                            }
+                        }
+                    }
+                    .overlay(content: {
+                        if isHovering {
+                            Image(systemName: "arrow.down.left.and.arrow.up.right")
+                                .font(.system(size: 18))
+                        }
+                    })
+                    .frame(width: 38, height: 38)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovering = h } }
+                .buttonStyle(.plain)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(song.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    ArtistLinksView(
+                        artists: song.ar,
+                        fallbackText: song.displayArtist,
+                        fontSize: 11,
+                        weight: .regular,
+                        normalColor: .secondary,
+                        hoverColor: .primary
+                    ) { artistId in
+                        navigateToArtist(id: artistId)
+                    }
+                }
+
+                if player.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                // MARK: - 音质选择 (SoundQualityType)
+                Menu {
+                    ForEach(SoundQualityType.allCases, id: \.self) { quality in
+                        Button {
+                            player.soundQuality = quality
+                        } label: {
+                            HStack {
+                                Text(quality.displayName)
+                                if player.soundQuality == quality {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Text(player.soundQuality.shortBadge)
+                        .font(.system(size: 13, weight: .regular))
+                        .lineLimit(1)
+                        .padding(.horizontal, 4.5)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3.5)
+                                .stroke(themeManager.accentColor.opacity(0.85), lineWidth: 0.8)
+                                .background(RoundedRectangle(cornerRadius: 3.5).fill(themeManager.accentColor.opacity(0.12)))
+                        )
+                        .foregroundStyle(themeManager.accentColor)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("音质选择：当前为 \(player.soundQuality.displayName)".localized)
+
+                Button {
+                    player.toggleLike(for: song)
+                } label: {
+                    Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
+                        .font(.system(size: 16))
+                        .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
+                }
+                .frame(width: 18, height: 18)
+                .buttonStyle(.plain)
+                .help((player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌").localized)
+
+                // 下载此歌曲
+                DownloadButton(song: song, iconSize: 16)
+                    .frame(width: 18, height: 18)
+
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.quaternary)
+                    .frame(width: 38, height: 38)
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.tertiary)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("未在播放".localized)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     // MARK: - Extras (Right)
@@ -274,6 +248,46 @@ struct PlayerBar: View {
 //            }
 //            .buttonStyle(.plain)
 //            .help("歌词")
+
+            // 桌面悬浮歌词开关与解锁
+            Button {
+                if DesktopLyricsManager.shared.isShowing && DesktopLyricsManager.shared.isLocked {
+                    DesktopLyricsManager.shared.unlock()
+                } else {
+                    DesktopLyricsManager.shared.toggle()
+                }
+            } label: {
+                Image(systemName: DesktopLyricsManager.shared.isShowing
+                      ? (DesktopLyricsManager.shared.isLocked ? "lock.fill" : "text.bubble.fill")
+                      : "text.bubble")
+                    .font(.system(size: 16))
+                    .foregroundStyle(DesktopLyricsManager.shared.isShowing
+                                     ? (DesktopLyricsManager.shared.isLocked ? .orange : themeManager.accentColor)
+                                     : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(DesktopLyricsManager.shared.isLocked ? "桌面歌词已锁定，点击直接解锁 (⇧⌘L)".localized : "桌面悬浮歌词 (⇧⌘D)".localized)
+            .contextMenu {
+                Button {
+                    DesktopLyricsManager.shared.toggle()
+                } label: {
+                    Label(DesktopLyricsManager.shared.isShowing ? "隐藏桌面歌词".localized : "显示桌面歌词".localized,
+                          systemImage: DesktopLyricsManager.shared.isShowing ? "eye.slash" : "eye")
+                }
+
+                Button {
+                    DesktopLyricsManager.shared.toggleSettings()
+                } label: {
+                    Label("桌面歌词外观设置".localized, systemImage: "paintpalette")
+                }
+
+                Button {
+                    DesktopLyricsManager.shared.toggleLock()
+                } label: {
+                    Label(DesktopLyricsManager.shared.isLocked ? "解锁桌面歌词".localized : "锁定桌面歌词".localized,
+                          systemImage: DesktopLyricsManager.shared.isLocked ? "lock.open" : "lock")
+                }
+            }
 
             Button {
                 player.isShowingQueue.toggle()
@@ -331,6 +345,17 @@ struct PlayerBar: View {
         if player.volume < 0.33  { return "speaker.wave.1.fill" }
         if player.volume < 0.66  { return "speaker.wave.2.fill" }
         return "speaker.wave.3.fill"
+    }
+}
+
+// MARK: - Isolated Progress Slider (防止频繁高刷新导致整栏视图重算)
+
+private struct PlayerProgressSliderView: View {
+    @Environment(PlayerManager.self) private var player
+
+    var body: some View {
+        @Bindable var player = player
+        ProgressSlider(value: $player.progress, trackHeight: 3)
     }
 }
 

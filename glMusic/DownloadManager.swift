@@ -438,8 +438,12 @@ final class DownloadManager: NSObject, @unchecked Sendable {
     }
 
     private func saveMetadata() {
-        if let data = try? JSONEncoder().encode(downloadedSongs) {
-            try? data.write(to: metadataFileURL, options: .atomic)
+        let songs = downloadedSongs
+        let targetURL = metadataFileURL
+        Task.detached(priority: .background) {
+            if let data = try? JSONEncoder().encode(songs) {
+                try? data.write(to: targetURL, options: .atomic)
+            }
         }
     }
 

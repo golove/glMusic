@@ -12,10 +12,10 @@ struct HomeView: View {
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @FocusState private var focusedId: String?
-    @State private var banners: [APIBanner] = []
-    @State private var playlists: [APIPlaylist] = []
-    @State private var newSongs: [APISong] = []
-    @State private var isLoading = true
+    @State private var banners: [APIBanner] = HomeDataCache.shared.cachedData?.banners ?? []
+    @State private var playlists: [APIPlaylist] = HomeDataCache.shared.cachedData?.playlists ?? []
+    @State private var newSongs: [APISong] = HomeDataCache.shared.cachedData?.newSongs ?? []
+    @State private var isLoading = HomeDataCache.shared.cachedData == nil
     @State private var errorMsg: String?
 
     init(selection: Binding<String?>? = nil) {
@@ -356,18 +356,34 @@ struct HomeView: View {
     }
 
     private func loadData() async {
-        isLoading = true
+        if let cached = HomeDataCache.shared.cachedData, HomeDataCache.shared.isFresh {
+            if banners.isEmpty {
+                banners = cached.banners
+                playlists = cached.playlists
+                newSongs = cached.newSongs
+            }
+            isLoading = false
+            return
+        }
+
+        if banners.isEmpty {
+            isLoading = true
+        }
         errorMsg = nil
         do {
             async let b = NetworkManager.shared.banner()
             async let p = NetworkManager.shared.personalizedPlaylists(limit: 10)
             async let n = NetworkManager.shared.personalizedNewSongs()
             let (fetchedBanners, fetchedPL, fetchedNS) = try await (b, p, n)
+            let songs = fetchedNS.compactMap(\.asAPISong)
             banners = fetchedBanners
             playlists = fetchedPL
-            newSongs = fetchedNS.compactMap(\.asAPISong)
+            newSongs = songs
+            HomeDataCache.shared.save(banners: fetchedBanners, playlists: fetchedPL, newSongs: songs)
         } catch {
-            errorMsg = "无法连接到 API 服务\n请确认 127.0.0.1:3000 已启动".localized
+            if banners.isEmpty {
+                errorMsg = "无法连接到 API 服务\n请确认 127.0.0.1:3000 已启动".localized
+            }
             print("HomeView error: \(error)")
         }
         isLoading = false
@@ -876,4 +892,27 @@ struct NewSongRow: View {
         .environment(PlayerManager())
         .environment(ThemeManager.shared)
         .environment(LanguageManager.shared)
+}
+
+// MARK: - 首页数据常驻内存缓存 (避免切出切进页面时重复发起网络请求与数据重绘)
+
+@MainActor
+final class HomeDataCache {
+    static let shared = HomeDataCache()
+    struct CachePayload {
+        let banners: [APIBanner]
+        let playlists: [APIPlaylist]
+        let newSongs: [APISong]
+        let timestamp: Date
+    }
+    private(set) var cachedData: CachePayload?
+
+    var isFresh: Bool {
+        guard let data = cachedData else { return false }
+        return Date().timeIntervalSince(data.timestamp) < 300 // 5分钟新鲜期
+    }
+
+    func save(banners: [APIBanner], playlists: [APIPlaylist], newSongs: [APISong]) {
+        cachedData = CachePayload(banners: banners, playlists: playlists, newSongs: newSongs, timestamp: Date())
+    }
 }

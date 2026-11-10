@@ -16,6 +16,18 @@ struct glMusicApp: App {
 
     init() {
         ThinScrollerConfigurator.shared.configureIfNeeded()
+        setupURLCache()
+    }
+
+    private func setupURLCache() {
+        let memoryCapacity = 64 * 1024 * 1024  // 64 MB RAM 高频图片与封面极速缓存
+        let diskCapacity = 300 * 1024 * 1024   // 300 MB 磁盘持久缓存
+        let cache = URLCache(
+            memoryCapacity: memoryCapacity,
+            diskCapacity: diskCapacity,
+            diskPath: "glmusic_image_cache"
+        )
+        URLCache.shared = cache
     }
 
     var body: some Scene {
@@ -30,10 +42,24 @@ struct glMusicApp: App {
                 .task {
                     await ensureBasicCookie()
                 }
+                .onAppear {
+                    DesktopLyricsManager.shared.setup(playerManager: playerManager, themeManager: themeManager)
+                }
         }
-       
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1100, height: 720)
+        .defaultSize(width: 1280, height: 800)
+
+        MenuBarExtra {
+            MenuBarView()
+                .environment(playerManager)
+                .environment(themeManager)
+                .environment(languageManager)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: playerManager.isPlaying ? "waveform" : "music.note")
+            }
+        }
+        .menuBarExtraStyle(.window)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("关于 glMusic".localized) {
@@ -104,6 +130,24 @@ struct glMusicApp: App {
                     playerManager.cycleRepeat()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(playerManager.isCrossfadeEnabled ? "关闭音频平滑交叉渐变".localized : "开启音频平滑交叉渐变".localized) {
+                    playerManager.toggleCrossfade()
+                }
+
+                Divider()
+
+                Button(DesktopLyricsManager.shared.isShowing ? "隐藏桌面悬浮歌词".localized : "显示桌面悬浮歌词".localized) {
+                    DesktopLyricsManager.shared.toggle()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Button(DesktopLyricsManager.shared.isLocked ? "解锁桌面歌词".localized : "锁定桌面歌词".localized) {
+                    DesktopLyricsManager.shared.toggleLock()
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
 
             CommandMenu("主题风格".localized) {

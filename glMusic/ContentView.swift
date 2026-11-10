@@ -34,17 +34,21 @@ struct ContentView: View {
                         .ignoresSafeArea(.container, edges: .top)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    // 悬浮胶囊播放栏
-                    PlayerBar(selection: $selection)
-                        .padding(.horizontal, 130)
-                        .padding(.bottom, 16)
-                        .zIndex(99)
+                    // 悬浮胶囊播放栏 (仅在非全屏歌词模式下加载，歌词展开时彻底解除背部播放条监听与重绘)
+                    if !player.isShowingLyrics {
+                        PlayerBar(selection: $selection)
+                            .padding(.horizontal, 130)
+                            .padding(.bottom, 16)
+                            .zIndex(99)
+                    }
                 }
             }
            
             .toolbar(removing: .sidebarToggle)
             .containerBackground(.thinMaterial, for: .window)
             .toolbarBackground(.hidden, for: .windowToolbar)
+            .opacity(player.isShowingLyrics ? 0 : 1)
+            .allowsHitTesting(!player.isShowingLyrics)
 
             // 全屏动效歌词视图 (Apple Music 风格)
             if player.isShowingLyrics {
@@ -137,7 +141,15 @@ struct ContentView: View {
             DownloadedSongsView()
         default:
             if let sel = selection {
-                if sel.hasPrefix("playlist_"),
+                if sel.hasPrefix("playlist_custom_") {
+                    let id = sel.replacingOccurrences(of: "playlist_custom_", with: "")
+                    CustomPlaylistDetailView(playlistId: id, onBack: {
+                        goBack()
+                    }, onDelete: {
+                        goBack()
+                    })
+                    .id("playlist_custom_\(id)")
+                } else if sel.hasPrefix("playlist_"),
                    let id = Int(sel.replacingOccurrences(of: "playlist_", with: "")) {
                     PlaylistDetailView(playlistId: id, onBack: {
                         goBack()

@@ -264,6 +264,9 @@ final class UpdateManager {
                 ditto.arguments = ["-x", "-k", downloadedFile.path, extractDir.path]
                 try ditto.run()
                 ditto.waitUntilExit()
+                guard ditto.terminationStatus == 0 else {
+                    throw NSError(domain: "UpdateManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "解压 ZIP 安装包失败"])
+                }
 
                 extractedAppURL = self.findAppBundle(in: extractDir)
             } else {
@@ -276,6 +279,9 @@ final class UpdateManager {
                 hdiutil.arguments = ["attach", downloadedFile.path, "-nobrowse", "-noverify", "-noautofsck", "-mountpoint", mountDir.path]
                 try hdiutil.run()
                 hdiutil.waitUntilExit()
+                guard hdiutil.terminationStatus == 0 else {
+                    throw NSError(domain: "UpdateManager", code: -3, userInfo: [NSLocalizedDescriptionKey: "挂载 DMG 安装镜像失败"])
+                }
 
                 if let appCandidate = self.findAppBundle(in: mountDir) {
                     let copiedApp = extractDir.appendingPathComponent("glMusic.app")
@@ -284,6 +290,9 @@ final class UpdateManager {
                     ditto.arguments = [appCandidate.path, copiedApp.path]
                     try ditto.run()
                     ditto.waitUntilExit()
+                    guard ditto.terminationStatus == 0 else {
+                        throw NSError(domain: "UpdateManager", code: -4, userInfo: [NSLocalizedDescriptionKey: "提取 DMG 应用文件失败"])
+                    }
                     extractedAppURL = self.findAppBundle(in: extractDir)
                 }
 
@@ -303,6 +312,15 @@ final class UpdateManager {
                 return
             }
 
+            // 严格验证应用 Bundle 完整性与代码签名
+            guard self.verifyBundleIntegrity(at: newApp) else {
+                await MainActor.run {
+                    self.isDownloading = false
+                    self.errorMessage = "新版本应用完整性或代码签名校验失败，已中止安装".localized
+                }
+                return
+            }
+
             // 确定目标安装路径（若在 Xcode DerivedData 调试环境下，优先更新 /Applications/glMusic.app）
             var targetAppURL = Bundle.main.bundleURL
             if targetAppURL.path.contains("DerivedData") {
@@ -310,19 +328,20 @@ final class UpdateManager {
             }
 
             await MainActor.run {
-                self.statusMessage = "更新完成，正在重启应用...".localized
+                self.statusMessage = "更新完成，正在安全替换并重启应用...".localized
             }
 
-            // 编写独立的自替换并重启脚本
+            // 编写独立的自替换并重启脚本（具备原子备份与失败自动回滚机制）
             let scriptContent = """
             #!/bin/bash
             TARGET_PID=$1
             NEW_APP="$2"
             TARGET_APP="$3"
             TEMP_DIR="$4"
+            BACKUP_APP="${TARGET_APP}.glmusic_backup"
 
             # 1. 等待当前进程完全退出
-            for i in {1..30}; do
+            for i in {1..40}; do
                 if ! kill -0 "$TARGET_PID" 2>/dev/null; then
                     break
                 fi
@@ -334,18 +353,30 @@ final class UpdateManager {
                 sleep 0.3
             fi
 
-            # 2. 去除新 app 的 quarantine 隔离标记，防止 macOS 弹出无法打开警告
+            # 2. 去除新 app 的 quarantine 隔离标记
             xattr -dr com.apple.quarantine "$NEW_APP" 2>/dev/null || true
 
-            # 3. 覆盖替换应用
-            rm -rf "$TARGET_APP" 2>/dev/null
-            ditto "$NEW_APP" "$TARGET_APP" 2>/dev/null || cp -R "$NEW_APP" "$TARGET_APP" 2>/dev/null
-            xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
+            # 3. 原子备份旧应用
+            rm -rf "$BACKUP_APP" 2>/dev/null || true
+            if [ -d "$TARGET_APP" ]; then
+                mv "$TARGET_APP" "$BACKUP_APP" 2>/dev/null
+            fi
 
-            # 4. 重新启动应用
-            open -n "$TARGET_APP" 2>/dev/null || open "$TARGET_APP"
+            # 4. 复制新应用，失败时自动回滚恢复旧应用
+            if /usr/bin/ditto "$NEW_APP" "$TARGET_APP" 2>/dev/null; then
+                rm -rf "$BACKUP_APP" 2>/dev/null || true
+                xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
+                open -n "$TARGET_APP" 2>/dev/null || open "$TARGET_APP"
+            else
+                # 复制失败：立即回滚恢复旧版应用，避免程序损坏
+                if [ -d "$BACKUP_APP" ]; then
+                    rm -rf "$TARGET_APP" 2>/dev/null || true
+                    mv "$BACKUP_APP" "$TARGET_APP" 2>/dev/null
+                fi
+                open -n "$TARGET_APP" 2>/dev/null || open "$TARGET_APP"
+            fi
 
-            # 5. 清理临时下载文件
+            # 5. 清理临时下载解压目录
             rm -rf "$TEMP_DIR" 2>/dev/null || true
             """
 
@@ -417,6 +448,59 @@ final class UpdateManager {
         let macosDir = url.appendingPathComponent("Contents/MacOS")
         return FileManager.default.fileExists(atPath: infoPlist.path) &&
                FileManager.default.fileExists(atPath: macosDir.path)
+    }
+
+    /// 校验 App Bundle 的完整性与基本安全性
+    private nonisolated func verifyBundleIntegrity(at url: URL) -> Bool {
+        guard isValidAppBundle(at: url) else { return false }
+
+        // 1. 读取并校验 Info.plist 中的 Bundle Identifier
+        let plistURL = url.appendingPathComponent("Contents/Info.plist")
+        guard let plistData = try? Data(contentsOf: plistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
+              let bundleId = plist["CFBundleIdentifier"] as? String else {
+            return false
+        }
+
+        // 必须是本应用的 Bundle Identifier
+        guard bundleId == "com.golove.glMusic" || bundleId.contains("glMusic") else {
+            print("⚠️ 升级包 Bundle ID 不匹配: \(bundleId)")
+            return false
+        }
+
+        // 2. 检查主可执行文件是否存在且具有可执行权限
+        guard let executableName = plist["CFBundleExecutable"] as? String else { return false }
+        let execURL = url.appendingPathComponent("Contents/MacOS/\(executableName)")
+        guard FileManager.default.isExecutableFile(atPath: execURL.path) else {
+            print("⚠️ 升级包主可执行文件缺失或无执行权限: \(execURL.path)")
+            return false
+        }
+
+        // 3. 执行 codesign 校验 (如果安装包包含代码签名，必须保证签名未受损)
+        let codesign = Process()
+        codesign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        codesign.arguments = ["--verify", "--deep", "--strict", url.path]
+        try? codesign.run()
+        codesign.waitUntilExit()
+
+        if codesign.terminationStatus != 0 {
+            // 检查是否是由于完全未签名 (ad-hoc / 开源构建)，还是签名被篡改破坏
+            let checkSign = Process()
+            let pipe = Pipe()
+            checkSign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            checkSign.arguments = ["-d", url.path]
+            checkSign.standardError = pipe
+            try? checkSign.run()
+            checkSign.waitUntilExit()
+            let errOutput = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            if !errOutput.contains("code object is not signed at all") && checkSign.terminationStatus == 0 {
+                // 原包原本是有签名的，但 --verify 失败了，说明包被篡改或损坏
+                print("❌ 升级包代码签名校验受损: \(errOutput)")
+                return false
+            }
+        }
+
+        return true
     }
 
     /// 比较两个语义化版本号，若 v1 > v2 则返回 true

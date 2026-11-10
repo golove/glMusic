@@ -294,7 +294,7 @@ private struct LyricsLeftArtSection: View {
                 .padding(.top, 20)
 
                 // 进度条控制 (独立隔离渲染，避免每 100ms 重绘左侧封面与歌曲元数据)
-                LyricsProgressSection(player: player)
+                LyricsProgressSection()
                     .frame(width: coverSize + 80)
 
                 HStack(spacing: (coverSize - 90) / 4) {
@@ -402,6 +402,7 @@ private struct LyricsScrollAreaView: View {
                                         player.seek(to: line.time)
                                     }
                                 )
+                                .equatable()
                                 .id(line.id)
                             }
                         }
@@ -471,7 +472,7 @@ private struct LyricsScrollAreaView: View {
                     }
                     return event
                 }
-                if !player.lyrics.isEmpty && player.currentLyricIndex >= 0 && player.currentLyricIndex < player.lyrics.count {
+                if player.lyrics.indices.contains(player.currentLyricIndex) {
                     let activeId = player.lyrics[player.currentLyricIndex].id
                     proxy.scrollTo(activeId, anchor: .center)
                 }
@@ -484,7 +485,7 @@ private struct LyricsScrollAreaView: View {
                 userScrollResumeTask?.cancel()
             }
             .onChange(of: player.currentLyricIndex) {
-                if !isUserScrolling && !player.lyrics.isEmpty && player.currentLyricIndex < player.lyrics.count {
+                if !isUserScrolling && player.lyrics.indices.contains(player.currentLyricIndex) {
                     let activeId = player.lyrics[player.currentLyricIndex].id
                     withAnimation(.easeInOut(duration: 0.45)) {
                         proxy.scrollTo(activeId, anchor: .center)
@@ -517,37 +518,51 @@ private struct LyricsScrollAreaView: View {
     }
 
     private func scrollToCurrentActive(proxy: ScrollViewProxy) {
-        guard !player.lyrics.isEmpty && player.currentLyricIndex < player.lyrics.count else { return }
+        guard player.lyrics.indices.contains(player.currentLyricIndex) else { return }
         let activeId = player.lyrics[player.currentLyricIndex].id
-        withAnimation(.easeInOut(duration: 0.4)) {
+        withAnimation(.easeInOut(duration: 0.45)) {
             proxy.scrollTo(activeId, anchor: .center)
         }
     }
 }
 
-// MARK: - Isolated Lyrics Progress Section (避免每 100ms 重绘全屏歌词封面与控件)
+// MARK: - Isolated Lyrics Progress Section (拆分进度滑块与 1Hz 秒级时间文本，彻底避免高频重绘)
 
 private struct LyricsProgressSection: View {
-    @Bindable var player: PlayerManager
-
     var body: some View {
         VStack(spacing: 4) {
-            ProgressSlider(
-                value: $player.progress,
-                trackHeight: 5,
-                activeColor: .white,
-                inactiveColor: .white.opacity(0.25)
-            )
+            LyricsProgressSliderView()
+            LyricsTimeLabelsView()
+        }
+    }
+}
 
-            HStack {
-                Text(player.currentTimeText)
-                    .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.6))
-                Spacer()
-                Text(player.remainingTimeText)
-                    .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.6))
-            }
+private struct LyricsProgressSliderView: View {
+    @Environment(PlayerManager.self) private var player
+
+    var body: some View {
+        @Bindable var p = player
+        ProgressSlider(
+            value: $p.progress,
+            trackHeight: 5,
+            activeColor: .white,
+            inactiveColor: .white.opacity(0.25)
+        )
+    }
+}
+
+private struct LyricsTimeLabelsView: View {
+    @Environment(PlayerManager.self) private var player
+
+    var body: some View {
+        HStack {
+            Text(player.currentTimeText)
+                .font(.system(size: 10).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.6))
+            Spacer()
+            Text(player.remainingTimeText)
+                .font(.system(size: 10).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.6))
         }
     }
 }

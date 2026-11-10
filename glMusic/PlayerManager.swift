@@ -21,6 +21,8 @@ final class PlayerManager {
     var currentBlurredArtwork: NSImage?
     var isPlaying: Bool = false
     var currentTime: TimeInterval = 0
+    /// 独立 1Hz 秒级更新状态：专供界面时间文本（currentTimeText / remainingTimeText）绑定，消除 10Hz 无效文本重排
+    var currentSecond: Int = 0
     var duration: TimeInterval = 0
     var volume: Double = 0.7 {
         didSet {
@@ -62,6 +64,8 @@ final class PlayerManager {
     private var fadePlayer = AVPlayer()
     private var isCrossfading: Bool = false
     private var crossfadeTask: Task<Void, Never>?
+    private var crossfadingTargetSong: APISong?
+    private var crossfadingTargetItem: AVPlayerItem?
 
     // MARK: - UI States
 
@@ -83,12 +87,14 @@ final class PlayerManager {
     var playlist: [APISong] = []
     var currentIndex: Int = -1
 
-    // MARK: - AVPlayer
+    // MARK: - AVPlayer & Session Management
 
     private var player = AVPlayer()
     private var timeObserver: Any?
     private var itemStatusObserver: NSKeyValueObservation?
     private var currentPlaybackTask: Task<Void, Never>?
+    /// 播放会话代次标识：防止切歌过快时旧网络/解码任务覆盖新歌曲状态
+    private var currentSessionId = UUID()
 
     // MARK: - Preloading & Fault-Tolerance Engine
 
@@ -105,13 +111,14 @@ final class PlayerManager {
         set {
             let target = newValue * duration
             currentTime = target
+            currentSecond = Int(target)
             player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
             updateNowPlaying()
         }
     }
 
-    var currentTimeText: String { formatTime(currentTime) }
-    var remainingTimeText: String { "-" + formatTime(max(0, duration - currentTime)) }
+    var currentTimeText: String { formatTime(Double(currentSecond)) }
+    var remainingTimeText: String { "-" + formatTime(max(0, duration - Double(currentSecond))) }
 
     // MARK: - Init & Deinit
 
@@ -134,13 +141,24 @@ final class PlayerManager {
         setupRemoteCommands()
     }
 
+    isolated deinit {
+        if let observer = timeObserver {
+            player.removeTimeObserver(observer)
+        }
+        itemStatusObserver?.invalidate()
+    }
+
     // MARK: - Play Song
 
     func play(_ song: APISong) {
         cancelCrossfade()
+        let sessionId = UUID()
+        self.currentSessionId = sessionId
+
         currentSong = song
         duration = Double(song.durationMs) / 1000.0
         currentTime = 0
+        currentSecond = 0
         currentLyricIndex = 0
         isLoading = true
 
@@ -159,26 +177,30 @@ final class PlayerManager {
         UserDefaults.standard.set(song.id, forKey: "last_played_song_id")
 
         updateNowPlaying()
-        fetchArtwork(for: song)
+        fetchArtwork(for: song, sessionId: sessionId)
 
         currentPlaybackTask?.cancel()
         currentPlaybackTask = Task {
-            async let playTask: Void = loadAndPlay(songId: song.id)
-            async let lyricTask: Void = loadLyrics(for: song.id)
+            async let playTask: Void = loadAndPlay(songId: song.id, sessionId: sessionId)
+            async let lyricTask: Void = loadLyrics(for: song.id, sessionId: sessionId)
             _ = await (playTask, lyricTask)
         }
     }
 
     func playAll(_ songs: [APISong], from index: Int = 0) {
+        guard !songs.isEmpty else { return }
         playlist = songs
-        guard index >= 0 && index < songs.count else { return }
-        currentIndex = index
-        play(songs[index])
+        let targetIndex = songs.indices.contains(index) ? index : 0
+        currentIndex = targetIndex
+        if songs.indices.contains(targetIndex) {
+            play(songs[targetIndex])
+        }
     }
 
     func seek(to time: TimeInterval) {
         cancelCrossfade()
         currentTime = min(max(time, 0), duration)
+        currentSecond = Int(currentTime)
         player.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
         updateNowPlaying()
         if duration > 15 && (duration - currentTime) > 15 {
@@ -264,7 +286,7 @@ final class PlayerManager {
         }
     }
 
-    private func loadAndPlay(songId: Int) async {
+    private func loadAndPlay(songId: Int, sessionId: UUID) async {
         // 0. 优先命中预加载缓冲池：达成 0ms 瞬间换轨与无缝起播
         if preloadedSongId == songId, let item = preloadedItem {
             #if DEBUG
@@ -273,6 +295,7 @@ final class PlayerManager {
             self.preloadedSongId = nil
             self.preloadedItem = nil
 
+            guard self.currentSessionId == sessionId else { return }
             await smoothlyTransitionToItem(item, forSongId: songId)
             return
         }
@@ -280,7 +303,7 @@ final class PlayerManager {
         // 1. 优先检查本地是否已下载：支持完全离线播放、0 秒缓冲与无损本地解码
         if let localURL = DownloadManager.shared.localAudioURL(for: songId) {
             print("💾 播放本地已下载音频: \(currentSong?.name ?? "") → \(localURL.lastPathComponent)")
-            guard currentSong?.id == songId else { return }
+            guard self.currentSessionId == sessionId && currentSong?.id == songId else { return }
             let item = AVPlayerItem(url: localURL)
             await smoothlyTransitionToItem(item, forSongId: songId)
             return
@@ -289,7 +312,7 @@ final class PlayerManager {
         // 2. 检查本地在线流媒体磁盘缓存（边播边存，二次收听 0 缓冲、0 流量、秒起播）
         if let cachedURL = await StreamingCacheManager.shared.cachedAudioURL(for: songId) {
             print("💾 播放本地流媒体缓存音频: \(currentSong?.name ?? "") → \(cachedURL.lastPathComponent)")
-            guard currentSong?.id == songId else { return }
+            guard self.currentSessionId == sessionId && currentSong?.id == songId else { return }
             let item = AVPlayerItem(url: cachedURL)
             await smoothlyTransitionToItem(item, forSongId: songId)
             return
@@ -297,6 +320,7 @@ final class PlayerManager {
 
         // 3. 本地未下载且未缓存：若为本地导入歌曲 (songId < 0) 且本地文件不存在，直接提示错误，不请求网络
         if songId < 0 {
+            guard self.currentSessionId == sessionId else { return }
             print("❌ 本地导入音频文件不存在或已被移动 (songId: \(songId))")
             isPlaying = false
             isLoading = false
@@ -321,6 +345,7 @@ final class PlayerManager {
 
             guard let finalUrl = urlStr, !finalUrl.isEmpty,
                   let url = URL(string: finalUrl) else {
+                guard self.currentSessionId == sessionId else { return }
                 print("⚠️ 歌曲 \(songId) 无可用 URL，自动跳过")
                 isLoading = false
                 handlePlaybackFailure(for: songId)
@@ -328,7 +353,7 @@ final class PlayerManager {
             }
 
             // 确保切歌时旧的网络请求不会覆盖当前最新的歌曲
-            guard currentSong?.id == songId else { return }
+            guard self.currentSessionId == sessionId && currentSong?.id == songId else { return }
 
             print("▶️ 播放: \(currentSong?.name ?? "") → \(finalUrl.prefix(80))...")
             let item = AVPlayerItem(url: url)
@@ -339,6 +364,7 @@ final class PlayerManager {
                 await StreamingCacheManager.shared.cacheSongIfNeeded(songId: songId, remoteURL: url)
             }
         } catch {
+            guard self.currentSessionId == sessionId else { return }
             print("❌ 播放失败: \(error)")
             isLoading = false
             updateNowPlaying()
@@ -407,10 +433,10 @@ final class PlayerManager {
         var targetLyrics: [LyricLine]? = nil
         if let localLrc = DownloadManager.shared.localLyrics(for: song.id) {
             let localTrans = DownloadManager.shared.localTranslation(for: song.id)
-            targetLyrics = parseLyrics(yrc: nil, lrc: localLrc, translation: localTrans)
+            targetLyrics = LyricsService.shared.parseLyrics(yrc: nil, lrc: localLrc, translation: localTrans)
         } else if song.id > 0 {
             if let resp = try? await NetworkManager.shared.lyrics(id: song.id) {
-                targetLyrics = parseLyrics(yrc: resp.yrc?.lyric, lrc: resp.lrc?.lyric, translation: resp.tlyric?.lyric)
+                targetLyrics = LyricsService.shared.parseLyrics(yrc: resp.yrc?.lyric, lrc: resp.lrc?.lyric, translation: resp.tlyric?.lyric)
             }
         }
 
@@ -439,11 +465,12 @@ final class PlayerManager {
         preloadedLyrics = nil
     }
 
-    // MARK: - Lyrics Loading & Parsing
+    // MARK: - Lyrics Loading (Delegated to LyricsService)
 
-    func loadLyrics(for songId: Int) async {
+    func loadLyrics(for songId: Int, sessionId: UUID? = nil) async {
         // 0. 优先命中预加载歌词
         if preloadedSongId == songId, let lyrics = preloadedLyrics, !lyrics.isEmpty {
+            if let sessionId = sessionId, self.currentSessionId != sessionId { return }
             self.lyrics = lyrics
             self.currentLyricIndex = 0
             self.isLoadingLyrics = false
@@ -455,171 +482,10 @@ final class PlayerManager {
         lyrics = []
         currentLyricIndex = 0
 
-        // 优先检查本地是否下载了离线歌词 / 本地伴生歌词
-        if let localLrc = DownloadManager.shared.localLyrics(for: songId) {
-            let localTrans = DownloadManager.shared.localTranslation(for: songId)
-            let parsed = parseLyrics(yrc: nil, lrc: localLrc, translation: localTrans)
-            lyrics = parsed
-            isLoadingLyrics = false
-            return
-        }
-
-        // 若为本地导入歌曲 (songId < 0) 且无本地伴生歌词，直接展示暂无本地歌词，不请求网络
-        if songId < 0 {
-            lyrics = [LyricLine(time: 0, text: "暂无本地歌词".localized)]
-            isLoadingLyrics = false
-            return
-        }
-
-        do {
-            let resp = try await NetworkManager.shared.lyrics(id: songId)
-            let parsed = parseLyrics(
-                yrc: resp.yrc?.lyric,
-                lrc: resp.lrc?.lyric,
-                translation: resp.tlyric?.lyric
-            )
-            lyrics = parsed
-        } catch {
-            lyrics = [LyricLine(time: 0, text: "暂无歌词".localized)]
-        }
-        isLoadingLyrics = false
-    }
-
-    private func parseLyrics(yrc: String?, lrc: String?, translation: String?) -> [LyricLine] {
-        // 1. 如果存在官方逐字歌词 (yrc)，优先进行毫秒级逐字解析
-        if let yrc = yrc, !yrc.isEmpty {
-            let yrcLines = parseYRC(yrc: yrc, translation: translation)
-            if !yrcLines.isEmpty {
-                return yrcLines
-            }
-        }
-
-        // 2. 回退到标准行级歌词 (lrc)
-        return parseLRC(lrc: lrc, translation: translation)
-    }
-
-    private func parseYRC(yrc: String, translation: String?) -> [LyricLine] {
-        var lines: [LyricLine] = []
-        let linePattern = /\[(\d+),(\d+)\](.*)/
-        let wordPattern = /\((\d+),(\d+)(?:,\d+)?\)([^\(\)]*)/
-
-        for rawLine in yrc.components(separatedBy: .newlines) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            guard let lineMatch = trimmed.firstMatch(of: linePattern) else { continue }
-
-            let lineStartMs = Double(lineMatch.1) ?? 0
-            let lineDurMs = Double(lineMatch.2) ?? 0
-            let lineBody = String(lineMatch.3)
-
-            let lineStartTime = lineStartMs / 1000.0
-            let lineDuration = lineDurMs / 1000.0
-
-            var words: [LyricWord] = []
-            var fullText = ""
-
-            let wordMatches = lineBody.matches(of: wordPattern)
-            for wm in wordMatches {
-                let wStartMs = Double(wm.1) ?? 0
-                let wDurMs = Double(wm.2) ?? 0
-                let wText = String(wm.3)
-
-                let wStartTime = wStartMs / 1000.0
-                let wDuration = wDurMs / 1000.0
-
-                if !wText.isEmpty {
-                    words.append(LyricWord(time: wStartTime, duration: wDuration, text: wText))
-                    fullText += wText
-                }
-            }
-
-            let cleanText = fullText.trimmingCharacters(in: .whitespaces)
-            if !cleanText.isEmpty {
-                lines.append(LyricLine(
-                    time: lineStartTime,
-                    text: cleanText,
-                    duration: lineDuration,
-                    words: words
-                ))
-            }
-        }
-
-        guard !lines.isEmpty else { return [] }
-
-        attachTranslation(to: &lines, translation: translation)
-
-        return lines.sorted { $0.time < $1.time }
-    }
-
-    private func parseLRC(lrc: String?, translation: String?) -> [LyricLine] {
-        guard let lrc = lrc, !lrc.isEmpty else { return [] }
-
-        var lines: [LyricLine] = []
-        let pattern = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/
-
-        for rawLine in lrc.components(separatedBy: .newlines) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            if let match = trimmed.firstMatch(of: pattern) {
-                let min = Double(match.1) ?? 0
-                let sec = Double(match.2) ?? 0
-                let msStr = match.3.map(String.init) ?? "0"
-                let ms = (Double(msStr) ?? 0) / (msStr.count == 3 ? 1000.0 : 100.0)
-                let time = min * 60 + sec + ms
-                let text = String(match.4).trimmingCharacters(in: .whitespaces)
-
-                if !text.isEmpty {
-                    lines.append(LyricLine(time: time, text: text))
-                }
-            }
-        }
-
-        attachTranslation(to: &lines, translation: translation)
-
-        var sortedLines = lines.sorted { $0.time < $1.time }
-
-        // 计算每行歌词的持续时间：基于字数 × 320ms/字，并用下一行时间戳防溢出
-        for i in 0..<sortedLines.count {
-            if i < sortedLines.count - 1 {
-                let diff = sortedLines[i + 1].time - sortedLines[i].time
-                let textLength = Double(sortedLines[i].text.count)
-                let estimatedSingTime = max(1.2, min(diff - 0.4, textLength * 0.32))
-                sortedLines[i].duration = max(1.0, estimatedSingTime)
-            } else {
-                sortedLines[i].duration = 5.0
-            }
-        }
-
-        return sortedLines
-    }
-
-    private func attachTranslation(to lines: inout [LyricLine], translation: String?) {
-        guard let trans = translation, !trans.isEmpty else { return }
-        let pattern = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/
-        var transDict: [Int: String] = [:]
-
-        for rawLine in trans.components(separatedBy: .newlines) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            if let match = trimmed.firstMatch(of: pattern) {
-                let min = Double(match.1) ?? 0
-                let sec = Double(match.2) ?? 0
-                let msStr = match.3.map(String.init) ?? "0"
-                let ms = (Double(msStr) ?? 0) / (msStr.count == 3 ? 1000.0 : 100.0)
-                let timeMs = Int((min * 60 + sec + ms) * 10)
-                let text = String(match.4).trimmingCharacters(in: .whitespaces)
-                if !text.isEmpty {
-                    transDict[timeMs] = text
-                }
-            }
-        }
-
-        for i in 0..<lines.count {
-            let key = Int(lines[i].time * 10)
-            for offset in [-3, -2, -1, 0, 1, 2, 3] {
-                if let t = transDict[key + offset] {
-                    lines[i].translation = t
-                    break
-                }
-            }
-        }
+        let fetched = await LyricsService.shared.fetchLyrics(for: songId)
+        if let sessionId = sessionId, self.currentSessionId != sessionId { return }
+        self.lyrics = fetched
+        self.isLoadingLyrics = false
     }
 
     // MARK: - Likes
@@ -859,8 +725,10 @@ final class PlayerManager {
         if isShuffled {
             currentIndex = Int.random(in: 0..<playlist.count)
         } else {
-            currentIndex = (currentIndex + 1) % playlist.count
+            let nextIndex = currentIndex + 1
+            currentIndex = (nextIndex >= 0 && nextIndex < playlist.count) ? nextIndex : 0
         }
+        guard playlist.indices.contains(currentIndex) else { return }
         play(playlist[currentIndex])
     }
 
@@ -873,7 +741,9 @@ final class PlayerManager {
             return
         }
         guard !playlist.isEmpty else { return }
-        currentIndex = (currentIndex - 1 + playlist.count) % playlist.count
+        let prevIndex = currentIndex - 1
+        currentIndex = (prevIndex >= 0 && prevIndex < playlist.count) ? prevIndex : max(0, playlist.count - 1)
+        guard playlist.indices.contains(currentIndex) else { return }
         play(playlist[currentIndex])
     }
 
@@ -891,139 +761,77 @@ final class PlayerManager {
         invalidatePreload()
     }
 
-    // MARK: - Media Center & Now Playing Integration
+    // MARK: - Media Center & Now Playing Integration (Delegated to NowPlayingService)
 
     private func updateNowPlaying() {
-        guard let song = currentSong else {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            return
-        }
-
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: song.name,
-            MPMediaItemPropertyArtist: song.displayArtist,
-            MPMediaItemPropertyAlbumTitle: song.displayAlbum,
-            MPMediaItemPropertyPlaybackDuration: duration > 0 ? duration : Double(song.durationMs) / 1000.0,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
-        ]
-
-        if let currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo,
-           let artwork = currentInfo[MPMediaItemPropertyArtwork] {
-            info[MPMediaItemPropertyArtwork] = artwork
-        }
-
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        NowPlayingService.shared.update(
+            song: currentSong,
+            duration: duration,
+            currentTime: currentTime,
+            isPlaying: isPlaying
+        )
     }
 
-    private func fetchArtwork(for song: APISong) {
+    private func fetchArtwork(for song: APISong, sessionId: UUID) {
         // 1. 优先检查本地封面 (已下载歌曲或本地导入歌曲)
         if let localCoverURL = DownloadManager.shared.localCoverURL(for: song.id),
            let nsImage = NSImage(contentsOf: localCoverURL) {
-            applyArtwork(nsImage, for: song)
+            applyArtwork(nsImage, for: song, sessionId: sessionId)
             return
         }
 
         // 2. 本地不存在，异步拉取网络封面
         guard let coverUrl = song.coverUrl, let url = URL(string: coverUrl) else {
-            self.currentBlurredArtwork = nil
+            if self.currentSessionId == sessionId {
+                self.currentBlurredArtwork = nil
+            }
             return
         }
         Task { [weak self] in
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let nsImage = NSImage(data: data) else { return }
             await MainActor.run { [weak self] in
-                guard let self = self, self.currentSong?.id == song.id else { return }
-                self.applyArtwork(nsImage, for: song)
+                guard let self = self, self.currentSessionId == sessionId else { return }
+                self.applyArtwork(nsImage, for: song, sessionId: sessionId)
             }
         }
     }
 
-    private func applyArtwork(_ nsImage: NSImage, for song: APISong) {
-        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in nsImage }
-        info[MPMediaItemPropertyArtwork] = artwork
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    private func applyArtwork(_ nsImage: NSImage, for song: APISong, sessionId: UUID) {
+        guard self.currentSessionId == sessionId else { return }
+        NowPlayingService.shared.setArtwork(nsImage)
 
-        // 异步预生成高斯模糊背景小图 (140x140，单次 GPU 耗时 < 1.5ms，彻底消灭全屏实时 65px 模糊滤镜对 GPU/CPU 的压榨)
+        // 异步预生成高斯模糊背景小图
         Task.detached(priority: .userInitiated) { [weak self] in
-            let blurred = Self.createBlurredArtwork(from: nsImage)
+            let blurred = NowPlayingService.generateBlurredArtwork(from: nsImage)
             await MainActor.run { [weak self] in
-                guard let self = self, self.currentSong?.id == song.id else { return }
+                guard let self = self, self.currentSessionId == sessionId else { return }
                 self.currentBlurredArtwork = blurred
             }
         }
     }
 
-    nonisolated private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-
-    nonisolated private static func createBlurredArtwork(from image: NSImage) -> NSImage? {
-        guard let tiffData = image.tiffRepresentation,
-              let ciImage = CIImage(data: tiffData) else { return nil }
-
-        let extent = ciImage.extent
-        guard extent.width > 0 && extent.height > 0 else { return nil }
-
-        let targetSize: CGFloat = 140.0
-        let scale = targetSize / max(extent.width, extent.height)
-        let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-
-        let clamped = scaledImage.clampedToExtent()
-        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
-        filter.setValue(clamped, forKey: kCIInputImageKey)
-        filter.setValue(16.0, forKey: kCIInputRadiusKey)
-
-        guard let output = filter.outputImage else { return nil }
-        let cropped = output.cropped(to: CGRect(x: 0, y: 0, width: targetSize, height: targetSize))
-
-        guard let cgImage = ciContext.createCGImage(cropped, from: cropped.extent) else { return nil }
-        return NSImage(cgImage: cgImage, size: NSSize(width: targetSize, height: targetSize))
-    }
-
     private func setupRemoteCommands() {
-        let center = MPRemoteCommandCenter.shared()
-
-        center.playCommand.isEnabled = true
-        center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.resume() }
-            return .success
-        }
-
-        center.pauseCommand.isEnabled = true
-        center.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.pause() }
-            return .success
-        }
-
-        center.togglePlayPauseCommand.isEnabled = true
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.togglePlay() }
-            return .success
-        }
-
-        center.nextTrackCommand.isEnabled = true
-        center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.next() }
-            return .success
-        }
-
-        center.previousTrackCommand.isEnabled = true
-        center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.previous() }
-            return .success
-        }
-
-        center.changePlaybackPositionCommand.isEnabled = true
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let posEvent = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor [weak self] in self?.seek(to: posEvent.positionTime) }
-            return .success
-        }
+        NowPlayingService.shared.setupRemoteCommands(
+            onPlay: { [weak self] in self?.resume() },
+            onPause: { [weak self] in self?.pause() },
+            onToggle: { [weak self] in self?.togglePlay() },
+            onNext: { [weak self] in self?.next() },
+            onPrevious: { [weak self] in self?.previous() },
+            onSeek: { [weak self] time in self?.seek(to: time) }
+        )
     }
 
     // MARK: - Observers
 
+    private var timeObserverTickCounter: Int = 0
+
     private func setupTimeObserver() {
+        if let existing = timeObserver {
+            player.removeTimeObserver(existing)
+            timeObserver = nil
+        }
+
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
             queue: .main
@@ -1031,35 +839,41 @@ final class PlayerManager {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let t = time.seconds
-                if t.isFinite {
-                    self.currentTime = t
-                    if !self.lyrics.isEmpty {
-                        let count = self.lyrics.count
-                        let curr = self.currentLyricIndex
-                        if curr >= 0 && curr < count && self.lyrics[curr].time <= t && (curr + 1 >= count || self.lyrics[curr + 1].time > t) {
-                            // 依然在当前行，O(1) 零计算开销
-                        } else if curr + 1 < count && self.lyrics[curr + 1].time <= t && (curr + 2 >= count || self.lyrics[curr + 2].time > t) {
-                            self.currentLyricIndex = curr + 1
-                        } else if let idx = self.lyrics.lastIndex(where: { $0.time <= t }) {
-                            if self.currentLyricIndex != idx {
-                                self.currentLyricIndex = idx
-                            }
-                        } else {
-                            self.currentLyricIndex = 0
-                        }
-                    }
+                guard t.isFinite else { return }
 
-                    // 距离当前曲目播完最后 15 秒以内时，自动在后台静默预加载下一首歌曲直链与歌词
-                    if self.duration > 15 && (self.duration - t) <= 15 {
-                        self.triggerPreloadNextSongIfNeeded()
-                    }
+                self.timeObserverTickCounter &+= 1
 
-                    // 检查是否触发歌曲末尾音频平滑交叉渐变 (Crossfade)
-                    if self.isCrossfadeEnabled && !self.isCrossfading && self.duration > 8 && self.repeatMode != .one {
-                        let remaining = self.duration - t
-                        if remaining <= self.crossfadeDuration && remaining >= 0.5 {
-                            self.triggerNaturalCrossfade()
-                        }
+                // 智能按需分频降耗 (Adaptive Tick Throttling):
+                // 仅当开启逐字卡拉OK动效或桌面悬浮歌词时，以全频 10Hz (每 100ms) 响应以保障毫秒级扫光流畅；
+                // 普通主界面静置播放、或全屏歌词选择“经典/聚光灯”模式时，无需高频唤醒主线程，
+                // 自动智能降频至 ~3.3Hz (每 300ms 刷新一次)，消减 66% 主线程重排与绘制开销。
+                let isKaraokeActive = (self.isShowingLyrics && LyricsStyleManager.shared.animationMode == .karaoke) || DesktopLyricsManager.shared.isShowing
+                if !isKaraokeActive && (self.timeObserverTickCounter % 3 != 0) {
+                    return
+                }
+
+                self.currentTime = t
+                let sec = Int(t)
+                if self.currentSecond != sec {
+                    self.currentSecond = sec
+                }
+                if !self.lyrics.isEmpty {
+                    let newIdx = LyricsService.shared.findLyricIndex(at: t, in: self.lyrics, currentIndex: self.currentLyricIndex)
+                    if self.currentLyricIndex != newIdx {
+                        self.currentLyricIndex = newIdx
+                    }
+                }
+
+                // 距离当前曲目播完最后 15 秒以内时，自动在后台静默预加载下一首歌曲直链与歌词
+                if self.duration > 15 && (self.duration - t) <= 15 {
+                    self.triggerPreloadNextSongIfNeeded()
+                }
+
+                // 检查是否触发歌曲末尾音频平滑交叉渐变 (Crossfade)
+                if self.isCrossfadeEnabled && !self.isCrossfading && self.duration > 8 && self.repeatMode != .one {
+                    let remaining = self.duration - t
+                    if remaining <= self.crossfadeDuration && remaining >= 0.5 {
+                        self.triggerNaturalCrossfade()
                     }
                 }
             }
@@ -1075,7 +889,18 @@ final class PlayerManager {
             MainActor.assumeIsolated {
                 guard let self else { return }
 
-                // 仅响应当前正在播放的 item 的结束通知
+                // 1. 若当前正在进行歌曲末尾平滑交叉渐变 (Crossfade)，下一首已在淡入播放中！
+                // 绝不能触发 self.next() 导致下一曲被打断并重新从 0 秒起播！应立即无缝加速完成交接。
+                if self.isCrossfading {
+                    if self.crossfadingTargetItem != nil {
+                        self.completeCrossfadeImmediately()
+                        return
+                    } else {
+                        self.cancelCrossfade()
+                    }
+                }
+
+                // 2. 仅响应当前正在播放的 item 的结束通知
                 if let item = notification.object as? AVPlayerItem,
                    let currentItem = self.player.currentItem,
                    item != currentItem {
@@ -1148,9 +973,11 @@ final class PlayerManager {
             }
 
             guard let finalUrl = urlStr, let url = URL(string: finalUrl) else {
-                isLoading = false
+                if currentSong?.id == song.id { isLoading = false }
                 return
             }
+
+            guard currentSong?.id == song.id else { return }
 
             let item = AVPlayerItem(url: url)
             setupItemStatusObserver(for: item, songId: song.id)
@@ -1175,6 +1002,7 @@ final class PlayerManager {
     private func triggerNaturalCrossfade() {
         guard let nextSong = getNextSong(), nextSong.id != currentSong?.id else { return }
         isCrossfading = true
+        crossfadingTargetSong = nextSong
         #if DEBUG
         print("🔀 [glMusic] 触发歌曲末尾平滑交叉渐变: 《\(currentSong?.name ?? "")》 ➔ 《\(nextSong.name)》 (时长: \(crossfadeDuration)s)")
         #endif
@@ -1201,8 +1029,12 @@ final class PlayerManager {
 
             guard let incomingItem = nextItem, self.isCrossfading else {
                 self.isCrossfading = false
+                self.crossfadingTargetSong = nil
+                self.crossfadingTargetItem = nil
                 return
             }
+
+            self.crossfadingTargetItem = incomingItem
 
             // 初始化淡入播放器
             self.fadePlayer.replaceCurrentItem(with: incomingItem)
@@ -1222,6 +1054,18 @@ final class PlayerManager {
 
             self.finishCrossfade(to: nextSong, with: incomingItem)
         }
+    }
+
+    private func completeCrossfadeImmediately() {
+        guard isCrossfading, let targetSong = crossfadingTargetSong, let targetItem = crossfadingTargetItem else {
+            cancelCrossfade()
+            return
+        }
+        crossfadeTask?.cancel()
+        crossfadeTask = nil
+        fadePlayer.volume = Float(volume)
+        player.volume = 0.0
+        finishCrossfade(to: targetSong, with: targetItem)
     }
 
     private func finishCrossfade(to nextSong: APISong, with item: AVPlayerItem) {
@@ -1251,20 +1095,27 @@ final class PlayerManager {
         currentSong = nextSong
         duration = Double(nextSong.durationMs) / 1000.0
         currentTime = player.currentTime().seconds
+        currentSecond = Int(currentTime)
         if let idx = playlist.firstIndex(where: { $0.id == nextSong.id }) {
             currentIndex = idx
         }
         HistoryManager.shared.record(song: nextSong)
         UserDefaults.standard.set(nextSong.id, forKey: "last_played_song_id")
+        let sessionId = UUID()
+        self.currentSessionId = sessionId
         updateNowPlaying()
-        fetchArtwork(for: nextSong)
+        fetchArtwork(for: nextSong, sessionId: sessionId)
 
+        // 歌词平滑接管
+        currentLyricIndex = 0
         Task {
-            await loadLyrics(for: nextSong.id)
+            await loadLyrics(for: nextSong.id, sessionId: sessionId)
         }
 
         isCrossfading = false
         crossfadeTask = nil
+        crossfadingTargetSong = nil
+        crossfadingTargetItem = nil
         #if DEBUG
         print("✅ [glMusic] 交叉渐变平滑完成，现已无缝过渡至: 《\(nextSong.name)》")
         #endif
@@ -1273,6 +1124,8 @@ final class PlayerManager {
     func cancelCrossfade() {
         crossfadeTask?.cancel()
         crossfadeTask = nil
+        crossfadingTargetSong = nil
+        crossfadingTargetItem = nil
         fadePlayer.pause()
         fadePlayer.replaceCurrentItem(with: nil)
         fadePlayer.volume = 0.0

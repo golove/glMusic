@@ -22,11 +22,6 @@ struct DesktopLyricsView: View {
             // MARK: - 可自定义的自适应背景层
             panelBackground
 
-            // MARK: - 原生极速窗口拖拽层 (直连 macOS WindowServer，120Hz 零抖动零掉帧)
-            if !manager.isLocked {
-                WindowDragArea()
-            }
-
             VStack(spacing: 4) {
                 // MARK: - 悬停控制栏 (仅在未锁定且鼠标悬停或正在配置外观时显现)
                 if (isHovered || manager.isShowingSettings) && !manager.isLocked {
@@ -114,24 +109,6 @@ struct DesktopLyricsView: View {
             withAnimation(.easeInOut(duration: 0.18)) {
                 isHovered = hovering
             }
-        }
-    }
-
-    // MARK: - 原生极速窗口拖拽层 (直连 macOS WindowServer，120Hz 硬件加速，杜绝手势抖动与卡顿)
-
-    struct WindowDragArea: NSViewRepresentable {
-        func makeNSView(context: Context) -> WindowDragView {
-            WindowDragView()
-        }
-
-        func updateNSView(_ nsView: WindowDragView, context: Context) {}
-    }
-
-    final class WindowDragView: NSView {
-        override var mouseDownCanMoveWindow: Bool { true }
-
-        override func mouseDown(with event: NSEvent) {
-            window?.performDrag(with: event)
         }
     }
 
@@ -294,20 +271,18 @@ private struct DesktopLyricsDisplayArea: View {
     var manager: DesktopLyricsManager
 
     private var currentLyric: LyricLine? {
-        guard !player.lyrics.isEmpty,
-              player.currentLyricIndex >= 0,
-              player.currentLyricIndex < player.lyrics.count else {
+        guard player.lyrics.indices.contains(player.currentLyricIndex) else {
             return nil
         }
         return player.lyrics[player.currentLyricIndex]
     }
 
     private var nextLyric: LyricLine? {
-        guard !player.lyrics.isEmpty,
-              player.currentLyricIndex + 1 < player.lyrics.count else {
+        let nextIndex = player.currentLyricIndex + 1
+        guard player.lyrics.indices.contains(nextIndex) else {
             return nil
         }
-        return player.lyrics[player.currentLyricIndex + 1]
+        return player.lyrics[nextIndex]
     }
 
     var body: some View {
@@ -370,35 +345,56 @@ private struct DesktopKaraokeLine: View {
     let backgroundStyle: DesktopLyricsBackgroundStyle
 
     var body: some View {
-        let progress = line.isWordSynced ? line.progress(at: player.currentTime) : 0.0
+        let progress = line.progress(at: player.currentTime)
 
-        if line.isWordSynced && progress > 0 {
-            // 单一 Text 实例：水平平滑染色渐变，100% 像素级对齐，零重影
+        let baseColor: Color = backgroundStyle == .light ? Color.black.opacity(0.8) : Color.white.opacity(0.85)
+
+        if progress > 0.0 && progress < 1.0 {
+            // 水平平滑遮罩裁剪 (0 CoreText 字符串重排，0 材质着色器刷新)
             let safeProgress = min(1.0, max(0.0, progress))
-            let baseColor: Color = backgroundStyle == .light ? Color.black.opacity(0.8) : Color.white.opacity(0.85)
 
-            Text(line.text)
-                .font(.system(size: fontSize, weight: .heavy))
-                .foregroundStyle(
-                    LinearGradient(
-                        stops: [
-                            .init(color: themeManager.accentColor, location: 0),
-                            .init(color: themeManager.accentColor, location: max(0, safeProgress - 0.015)),
-                            .init(color: baseColor, location: min(1.0, safeProgress + 0.015)),
-                            .init(color: baseColor, location: 1.0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .shadow(color: backgroundStyle == .light ? .clear : .black.opacity(0.95), radius: 3, x: 0, y: 1)
-        } else {
-            // 普通整行或待播：纯粹单层高亮主题色
+            ZStack(alignment: .leading) {
+                Text(line.text)
+                    .font(.system(size: fontSize, weight: .heavy))
+                    .foregroundStyle(baseColor)
+                    .shadow(color: backgroundStyle == .light ? .clear : .black.opacity(0.95), radius: 3, x: 0, y: 1)
+
+                Text(line.text)
+                    .font(.system(size: fontSize, weight: .heavy))
+                    .foregroundStyle(themeManager.accentColor)
+                    .shadow(color: backgroundStyle == .light ? .clear : .black.opacity(0.95), radius: 3, x: 0, y: 1)
+                    .mask(alignment: .leading) {
+                        GeometryReader { geo in
+                            let fillW = geo.size.width * safeProgress
+                            let feather: CGFloat = 8
+                            HStack(spacing: 0) {
+                                Rectangle()
+                                    .fill(Color.white)
+                                    .frame(width: max(0, fillW - feather))
+                                LinearGradient(
+                                    colors: [Color.white, Color.clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: min(feather, fillW))
+                            }
+                            .frame(width: fillW, alignment: .leading)
+                        }
+                    }
+            }
+        } else if progress >= 1.0 {
+            // 已唱完 (progress >= 1.0)：全亮主题色静态文本，0 遮罩开销
             Text(line.text)
                 .font(.system(size: fontSize, weight: .heavy))
                 .foregroundStyle(themeManager.accentColor)
                 .shadow(color: backgroundStyle == .light ? .clear : .black.opacity(0.95), radius: 4, x: 0, y: 1)
                 .shadow(color: themeManager.accentColor.opacity(0.35), radius: 6, x: 0, y: 0)
+        } else {
+            // 待播 (progress <= 0)：未激活底色静态文本，0 遮罩开销
+            Text(line.text)
+                .font(.system(size: fontSize, weight: .heavy))
+                .foregroundStyle(baseColor)
+                .shadow(color: backgroundStyle == .light ? .clear : .black.opacity(0.95), radius: 3, x: 0, y: 1)
         }
     }
 }

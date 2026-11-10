@@ -39,7 +39,12 @@ struct CustomPlaylist: Identifiable, Codable, Hashable {
 final class CustomPlaylistManager {
     static let shared = CustomPlaylistManager()
 
-    var playlists: [CustomPlaylist] = []
+    var playlists: [CustomPlaylist] = [] {
+        didSet {
+            rebuildSongIdCache()
+        }
+    }
+    private var songIdCache: [String: Set<Int>] = [:]
     private var saveTask: Task<Void, Never>?
 
     private var storageFileURL: URL {
@@ -112,7 +117,18 @@ final class CustomPlaylistManager {
         scheduleSave()
     }
 
+    private func rebuildSongIdCache() {
+        var dict: [String: Set<Int>] = [:]
+        for pl in playlists {
+            dict[pl.id] = Set(pl.songs.map(\.id))
+        }
+        self.songIdCache = dict
+    }
+
     func isSongInPlaylist(songId: Int, playlistId: String) -> Bool {
+        if let set = songIdCache[playlistId] {
+            return set.contains(songId)
+        }
         guard let pl = playlists.first(where: { $0.id == playlistId }) else { return false }
         return pl.songs.contains(where: { $0.id == songId })
     }

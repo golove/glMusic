@@ -31,73 +31,35 @@ struct CustomPlaylistDetailView: View {
     var body: some View {
         ZStack(alignment: .top) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if let pl = playlist {
-                        if pl.songs.isEmpty {
-                            emptyStateView
-                        } else {
-                            LazyVStack(spacing: 0) {
-                                ForEach(Array(pl.songs.enumerated()), id: \.element.id) { idx, song in
-                                    UnifiedSongRow(song: song, index: idx + 1, allSongs: pl.songs)
-                                        .contextMenu {
-                                            Button {
-                                                player.play(song)
-                                            } label: {
-                                                Label("立即播放".localized, systemImage: "play.fill")
-                                            }
-
-                                            Button {
-                                                player.playNext(song)
-                                            } label: {
-                                                Label("下一首播放".localized, systemImage: "text.insert")
-                                            }
-
-                                            Button {
-                                                player.addToPlaylist(song)
-                                            } label: {
-                                                Label("添加到播放列表".localized, systemImage: "text.badge.plus")
-                                            }
-
-                                            Divider()
-
-                                            Button(role: .destructive) {
-                                                playlistManager.removeSong(songId: song.id, fromPlaylistId: playlistId)
-                                            } label: {
-                                                Label("从歌单中移除".localized, systemImage: "trash")
-                                            }
-
-                                            Divider()
-
-                                            if DownloadManager.shared.isDownloaded(song.id) {
-                                                Button {
-                                                    DownloadManager.shared.revealInFinder(song.id)
-                                                } label: {
-                                                    Label("在访达中显示".localized, systemImage: "folder")
-                                                }
-                                            } else {
-                                                Button {
-                                                    DownloadManager.shared.downloadSong(song)
-                                                } label: {
-                                                    Label("下载歌曲".localized, systemImage: "arrow.down.circle")
-                                                }
-                                            }
-                                        }
-                                }
+                if let pl = playlist {
+                    if pl.songs.isEmpty {
+                        emptyStateView
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(pl.songs.enumerated()), id: \.element.id) { idx, song in
+                                UnifiedSongRow(
+                                    song: song,
+                                    index: idx + 1,
+                                    allSongs: pl.songs,
+                                    onDeleteFromPlaylist: {
+                                        playlistManager.removeSong(songId: song.id, fromPlaylistId: playlistId)
+                                    }
+                                )
                             }
                         }
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: "music.note")
-                                .font(.system(size: 36))
-                                .foregroundStyle(.tertiary)
-                            Text("歌单不存在或已删除".localized)
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 200)
+                        .padding(.bottom, 120)
                     }
-
-                    Spacer(minLength: 120)
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.tertiary)
+                        Text("歌单不存在或已删除".localized)
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                    .padding(.bottom, 120)
                 }
             }
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -177,23 +139,14 @@ struct CustomPlaylistDetailView: View {
     private func headerSection(_ pl: CustomPlaylist) -> some View {
         HStack(alignment: .top) {
             // 封面 (与推荐歌单 180x180 规格保持一致)
-            ZStack {
-                if let cover = pl.coverUrl, !cover.isEmpty {
-                    AsyncImage(url: URL(string: cover)) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            coverPlaceholder
-                        }
-                    }
-                } else {
-                    coverPlaceholder
-                }
-            }
+            CachedAsyncCoverView(
+                urlString: pl.coverUrl,
+                placeholderIcon: "music.note.list",
+                targetSize: 180,
+                cornerRadius: 12
+            )
             .frame(width: 180, height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
 
             // 信息详情
             VStack(alignment: .leading, spacing: 8) {

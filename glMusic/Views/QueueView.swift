@@ -255,16 +255,9 @@ private struct QueueRowView: View {
             .frame(width: 20)
 
             // Cover
-            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    Rectangle().fill(.quaternary)
-                }
-            }
-            .frame(width: 32, height: 32)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            SongCoverThumbnailView(song: song, size: 32)
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
 
             // Title & Artist
             VStack(alignment: .leading, spacing: 2) {
@@ -430,16 +423,9 @@ private struct QueueHistoryRowView: View {
             .frame(width: 22)
 
             // Cover
-            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    Rectangle().fill(.quaternary)
-                }
-            }
-            .frame(width: 32, height: 32)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            SongCoverThumbnailView(song: song, size: 32)
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
 
             // Title & Artist
             VStack(alignment: .leading, spacing: 2) {

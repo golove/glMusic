@@ -21,6 +21,7 @@ struct SongsView: View {
                         UnifiedSongRow(song: song, index: idx + 1, allSongs: songs)
                     }
                 }
+                .padding(.bottom, 80)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
                 // Header

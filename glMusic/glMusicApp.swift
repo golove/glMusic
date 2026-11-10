@@ -14,6 +14,22 @@ struct glMusicApp: App {
     @State private var themeManager = ThemeManager.shared
     @State private var languageManager = LanguageManager.shared
 
+    private var menuBarIcon: NSImage {
+        if let img = NSImage(named: "MenuBarIcon") {
+            let icon = (img.copy() as? NSImage) ?? img
+            icon.size = NSSize(width: 18, height: 18)
+            icon.isTemplate = false
+            return icon
+        }
+        if let appIcon = NSApplication.shared.applicationIconImage {
+            let icon = (appIcon.copy() as? NSImage) ?? appIcon
+            icon.size = NSSize(width: 18, height: 18)
+            icon.isTemplate = false
+            return icon
+        }
+        return NSImage()
+    }
+
     init() {
         ThinScrollerConfigurator.shared.configureIfNeeded()
         setupURLCache()
@@ -55,9 +71,7 @@ struct glMusicApp: App {
                 .environment(themeManager)
                 .environment(languageManager)
         } label: {
-            HStack(spacing: 3) {
-                Image(systemName: playerManager.isPlaying ? "waveform" : "music.note")
-            }
+            Image(nsImage: menuBarIcon)
         }
         .menuBarExtraStyle(.window)
         .commands {

@@ -374,25 +374,46 @@ struct KaraokeLyricLineView: View {
     }
 
     var body: some View {
-        if isActive && progress > 0 {
+        if isActive && progress > 0.0 && progress < 1.0 {
+            // 逐字演唱进行中：底层暗色文本 + 顶层主题色遮罩裁剪（0 CoreText 字符串排版重构，0 渐变材质重构）
             let safeProgress = min(1.0, max(0.0, progress))
-            let feather = 0.015
+            ZStack(alignment: .leading) {
+                Text(text)
+                    .font(font)
+                    .multilineTextAlignment(textAlignment)
+                    .foregroundStyle(inactiveColor)
+
+                Text(text)
+                    .font(font)
+                    .multilineTextAlignment(textAlignment)
+                    .foregroundStyle(themeManager.accentColor)
+                    .mask(alignment: .leading) {
+                        GeometryReader { geo in
+                            let fillW = geo.size.width * safeProgress
+                            let feather: CGFloat = 8
+                            HStack(spacing: 0) {
+                                Rectangle()
+                                    .fill(Color.white)
+                                    .frame(width: max(0, fillW - feather))
+                                LinearGradient(
+                                    colors: [Color.white, Color.clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: min(feather, fillW))
+                            }
+                            .frame(width: fillW, alignment: .leading)
+                        }
+                    }
+            }
+        } else if isActive && progress >= 1.0 {
+            // 本行已唱完：直接显示全亮主题色静态文本，0 渐变开销
             Text(text)
                 .font(font)
                 .multilineTextAlignment(textAlignment)
-                .foregroundStyle(
-                    LinearGradient(
-                        stops: [
-                            .init(color: themeManager.accentColor, location: 0),
-                            .init(color: themeManager.accentColor, location: max(0, safeProgress - feather)),
-                            .init(color: inactiveColor, location: min(1.0, safeProgress + feather)),
-                            .init(color: inactiveColor, location: 1.0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .foregroundStyle(themeManager.accentColor)
         } else {
+            // 未开始演唱：显示静止未激活状态，0 渐变开销
             Text(text)
                 .font(font)
                 .multilineTextAlignment(textAlignment)

@@ -27,9 +27,6 @@ struct PlaylistDetailView: View {
            
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                  
-
                 if isLoading {
                     ProgressView("加载中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
@@ -44,21 +41,15 @@ struct PlaylistDetailView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
-                   
-
-                   
-
-                    // Song list
+                    // Direct LazyVStack for optimal SwiftUI viewport virtualization
                     LazyVStack(spacing: 0) {
                         ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
                             UnifiedSongRow(song: song, index: idx + 1, allSongs: songs)
                         }
                     }
-//                    .padding(.bottom, 80)
+                    .padding(.bottom, 80)
                 }
             }
-                
-        }
             .safeAreaInset(edge: .top, spacing: 0) {
                 // 顶部常驻固定导航栏 (不随下方列表滚动)
                 if let onBack = onBack {
@@ -130,22 +121,14 @@ struct PlaylistDetailView: View {
     private var headerSection: some View {
         HStack(alignment: .top){
             // Cover
-            AsyncImage(url: URL(string: playlist?.displayCover ?? "")) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    Rectangle().fill(.quaternary)
-                        .overlay(
-                            Image(systemName: "music.note.list")
-                                .font(.largeTitle)
-                                .foregroundStyle(.tertiary)
-                        )
-                }
-            }
+            CachedAsyncCoverView(
+                urlString: playlist?.displayCover,
+                placeholderIcon: "music.note.list",
+                targetSize: 180,
+                cornerRadius: 12
+            )
             .frame(width: 180, height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
 
             // Info
             VStack(alignment: .leading, spacing: 8) {

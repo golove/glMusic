@@ -16,6 +16,7 @@ struct WindowToolbarAccessor: NSViewRepresentable {
 
     class Coordinator {
         var didClearInitialFocus = false
+        var isConfigured = false
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -28,6 +29,7 @@ struct WindowToolbarAccessor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        guard !context.coordinator.isConfigured else { return }
         DispatchQueue.main.async {
             configureWindow(nsView.window, coordinator: context.coordinator)
         }
@@ -64,6 +66,7 @@ struct WindowToolbarAccessor: NSViewRepresentable {
                 sidebarItem.holdingPriority = .required
                 sidebarItem.canCollapse = false
                 sidebarItem.canCollapseFromWindowResize = false
+                coordinator.isConfigured = true
             }
         }
 

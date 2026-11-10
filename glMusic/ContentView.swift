@@ -45,7 +45,7 @@ struct ContentView: View {
             }
            
             .toolbar(removing: .sidebarToggle)
-            .containerBackground(.thinMaterial, for: .window)
+            .windowContainerBackground()
             .toolbarBackground(.hidden, for: .windowToolbar)
             .opacity(player.isShowingLyrics ? 0 : 1)
             .allowsHitTesting(!player.isShowingLyrics)
@@ -206,6 +206,18 @@ struct ContentView: View {
         }
         .frame(width: 0, height: 0)
         .opacity(0)
+    }
+}
+
+// MARK: - Compatibility Helper for macOS 14 / 15
+extension View {
+    @ViewBuilder
+    fileprivate func windowContainerBackground() -> some View {
+        if #available(macOS 15.0, *) {
+            self.containerBackground(.thinMaterial, for: .window)
+        } else {
+            self.background(.thinMaterial)
+        }
     }
 }
 

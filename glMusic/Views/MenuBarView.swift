@@ -20,9 +20,10 @@ struct MenuBarView: View {
             // MARK: - Header
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(themeManager.accentColor)
+                    Image("MenuBarIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
 
                     Text("glMusic")
                         .font(.system(size: 12, weight: .bold))
@@ -97,42 +98,10 @@ struct MenuBarView: View {
             // MARK: - Song Info
             if let song = player.currentSong {
                 HStack(spacing: 10) {
-                    // 封面
-                    if let localCover = DownloadManager.shared.localCoverURL(for: song.id),
-                       let nsImg = NSImage(contentsOf: localCover) {
-                        Image(nsImage: nsImg)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    } else if let coverUrl = song.coverUrl, !coverUrl.isEmpty {
-                        AsyncImage(url: URL(string: coverUrl)) { phase in
-                            switch phase {
-                            case .success(let img):
-                                img.resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            default:
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.primary.opacity(0.06))
-                                    .overlay(
-                                        Image(systemName: "music.note")
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(.secondary)
-                                    )
-                            }
-                        }
+                    // 封面 (异步 ImageIO 降采样与内存 NSCache 缓存)
+                    SongCoverThumbnailView(song: song, size: 44)
                         .frame(width: 44, height: 44)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                    } else {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.primary.opacity(0.06))
-                            .frame(width: 44, height: 44)
-                            .overlay(
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.secondary)
-                            )
-                    }
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(song.name)

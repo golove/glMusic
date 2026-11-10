@@ -9,9 +9,10 @@
 import Foundation
 import AppKit
 import CoreImage
+import CryptoKit
 import NeteaseCloudMusicAPI
 
-// MARK: - API Cache Layer (L1 内存 + L2 磁盘二级缓存体系)
+// MARK: - API Cache Layer (L1 内存 + L2 磁盘二级缓存体系，支持 SHA-256 防冲突与容量限制)
 
 actor APICache {
     static let shared = APICache()
@@ -28,6 +29,8 @@ actor APICache {
 
     private var storage: [String: MemoryEntry] = [:]
     private let diskCacheDirectory: URL
+    private let maxDiskBytes: Int64 = 150 * 1024 * 1024 // 150 MB 磁盘配额
+    private var lastTrimTime: Date = .distantPast
 
     private init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -38,13 +41,11 @@ actor APICache {
         self.diskCacheDirectory = dir
     }
 
+    /// 使用 SHA-256 哈希作为文件名，彻底杜绝特殊字符替换造成的缓存键碰撞冲突
     private func fileURL(for key: String) -> URL {
-        let safeKey = key
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: ":", with: "_")
-            .replacingOccurrences(of: "?", with: "_")
-            .replacingOccurrences(of: "&", with: "_")
-        return diskCacheDirectory.appendingPathComponent("\(safeKey).cache")
+        let hash = SHA256.hash(data: Data(key.utf8))
+        let hex = hash.map { String(format: "%02x", $0) }.joined()
+        return diskCacheDirectory.appendingPathComponent("\(hex).cache")
     }
 
     func get<T>(_ key: String) -> T? {
@@ -96,6 +97,8 @@ actor APICache {
                 }
             }
         }
+
+        trimDiskCacheIfNeeded()
     }
 
     func remove(_ key: String) {
@@ -113,6 +116,49 @@ actor APICache {
         if let files = try? FileManager.default.contentsOfDirectory(at: diskCacheDirectory, includingPropertiesForKeys: nil) {
             for f in files {
                 try? FileManager.default.removeItem(at: f)
+            }
+        }
+    }
+
+    /// 定期 LRU 淘汰：超过 150MB 配额时，自动清理最早修改的缓存文件至安全水位
+    private func trimDiskCacheIfNeeded() {
+        let now = Date()
+        guard now.timeIntervalSince(lastTrimTime) > 300 else { return } // 最多每 5 分钟触发一次
+        lastTrimTime = now
+
+        let dir = diskCacheDirectory
+        let maxBytes = maxDiskBytes
+
+        Task.detached(priority: .utility) {
+            guard let files = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
+            ) else { return }
+
+            var totalSize: Int64 = 0
+            var fileItems: [(url: URL, size: Int64, date: Date)] = []
+
+            for file in files {
+                guard file.pathExtension == "cache",
+                      let values = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else {
+                    continue
+                }
+                let size = Int64(values.fileSize ?? 0)
+                let date = values.contentModificationDate ?? Date.distantPast
+                totalSize += size
+                fileItems.append((file, size, date))
+            }
+
+            if totalSize > maxBytes {
+                let sorted = fileItems.sorted(by: { $0.date < $1.date })
+                var currentSize = totalSize
+                let targetSize = Int64(Double(maxBytes) * 0.75)
+
+                for item in sorted {
+                    if currentSize <= targetSize { break }
+                    try? FileManager.default.removeItem(at: item.url)
+                    currentSize -= item.size
+                }
             }
         }
     }
@@ -142,9 +188,13 @@ final class NetworkManager: @unchecked Sendable {
         // 关闭 SDK 内部 autoUnblock，统一由 NetworkManager / PlayerManager 安全接管，避免 Cocoa 字典修改崩溃
         self.client.autoUnblock = false
 
-        // 恢复保存的网易云 Cookie
-        if let savedCookie = UserDefaults.standard.string(forKey: "netease_cookie"), !savedCookie.isEmpty {
+        // 恢复保存的网易云 Cookie (从 Keychain 读取，支持从旧版 UserDefaults 自动平滑迁移)
+        if let savedCookie = KeychainHelper.loadCookie(), !savedCookie.isEmpty {
             self.client.setCookie(savedCookie)
+        } else if let legacyCookie = UserDefaults.standard.string(forKey: "netease_cookie"), !legacyCookie.isEmpty {
+            KeychainHelper.saveCookie(legacyCookie)
+            UserDefaults.standard.removeObject(forKey: "netease_cookie")
+            self.client.setCookie(legacyCookie)
         }
     }
 
@@ -154,15 +204,19 @@ final class NetworkManager: @unchecked Sendable {
         await APICache.shared.clearAll()
     }
 
-    // MARK: - Cookie 管理
+    // MARK: - Cookie 管理 (钥匙串加密安全隔离)
 
     var cookie: String? {
-        get { UserDefaults.standard.string(forKey: "netease_cookie") }
+        get {
+            KeychainHelper.loadCookie() ?? UserDefaults.standard.string(forKey: "netease_cookie")
+        }
         set {
             if let val = newValue, !val.isEmpty {
-                UserDefaults.standard.set(val, forKey: "netease_cookie")
+                KeychainHelper.saveCookie(val)
+                UserDefaults.standard.removeObject(forKey: "netease_cookie")
                 client.setCookie(val)
             } else {
+                KeychainHelper.deleteCookie()
                 UserDefaults.standard.removeObject(forKey: "netease_cookie")
                 client.setCookie("")
             }

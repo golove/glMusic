@@ -359,6 +359,7 @@ struct OfficialPlaylistCard: View {
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @State private var isHovering = false
+    @State private var hoverDebounceTask: Task<Void, Never>?
     @State private var isPlayHovering = false
     @State private var isLoadingTracks = false
 
@@ -370,25 +371,12 @@ struct OfficialPlaylistCard: View {
                 Button {
                     onSelect?()
                 } label: {
-                    AsyncImage(url: URL(string: playlist.displayCover ?? "")) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        default:
-                            Rectangle()
-                                .fill(.quaternary)
-                                .overlay(
-                                    Image(systemName: "music.note.list")
-                                        .font(.title2)
-                                        .foregroundStyle(.tertiary)
-                                )
-                        }
-                    }
-                    .frame(minWidth: 160, maxWidth: .infinity)
-                    .aspectRatio(1, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    CachedAsyncCoverView(
+                        urlString: playlist.displayCover,
+                        placeholderIcon: "music.note.list",
+                        targetSize: 200,
+                        cornerRadius: 10
+                    )
                 }
                 .buttonStyle(.plain)
 
@@ -440,44 +428,57 @@ struct OfficialPlaylistCard: View {
                 }
 
                 // 悬停快捷播放按钮 (右下角)
-                if isHovering {
-                    Button {
-                        loadAndPlay()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(themeManager.accentColor)
-                                .frame(width: 38, height: 38)
-                                .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                Button {
+                    loadAndPlay()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(themeManager.accentColor)
+                            .frame(width: 38, height: 38)
+                            .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
 
-                            if isLoadingTracks {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(.white)
-                            } else {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .offset(x: 1.5)
-                            }
-                        }
-                        .scaleEffect(isPlayHovering ? 1.08 : 1.0)
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { h in
-                        withAnimation(.easeInOut(duration: 0.1)) {
-                            isPlayHovering = h
+                        if isLoadingTracks {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
+                                .offset(x: 1.5)
                         }
                     }
-                    .padding(8)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .scaleEffect(isPlayHovering ? 1.08 : 1.0)
                 }
+                .buttonStyle(.plain)
+                .onHover { h in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isPlayHovering = h
+                    }
+                }
+                .padding(8)
+                .opacity(isHovering ? 1 : 0)
+                .allowsHitTesting(isHovering)
             }
             .scaleEffect(isHovering ? 1.02 : 1.0)
-            .shadow(color: .black.opacity(isHovering ? 0.18 : 0.08), radius: isHovering ? 10 : 5, y: 4)
-            .animation(.easeInOut(duration: 0.2), value: isHovering)
-            .onHover { h in
-                isHovering = h
+            .shadow(color: .black.opacity(isHovering ? 0.20 : 0.08), radius: 6, y: 3)
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .onHover { hovering in
+                hoverDebounceTask?.cancel()
+                if hovering {
+                    // 滑动防抖抑制：当用户连续滚动掠过卡片不足 45ms 时，不触发阴影与放大动画
+                    hoverDebounceTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 45_000_000) // 45ms
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isHovering = true
+                        }
+                    }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isHovering = false
+                    }
+                }
             }
 
             // MARK: - Title & Creator

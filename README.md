@@ -6,11 +6,11 @@
 
 <p align="center">
   <strong>一款基于 Swift & SwiftUI 构建的现代 macOS 原生高颜值音乐播放器</strong><br>
-  深度融合 macOS 设计规范，呈现极致 Apple Music 视觉质感、原生 SDK 官方直连、智能换源解灰与沉浸听歌体验。
+  深度融合 macOS 设计规范，呈现极致 Apple Music 视觉质感、原生 SDK 官方直连、智能换源解灰、桌面悬浮歌词与极低能耗沉浸听歌体验。
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v0.3.4-0071e3?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Release-v0.3.9-0071e3?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/Platform-macOS%2014.0%2B-black?style=flat-square&logo=apple" alt="Platform" />
   <img src="https://img.shields.io/badge/Language-Swift%205%20%2F%206-F05138?style=flat-square&logo=swift" alt="Language" />
   <img src="https://img.shields.io/badge/Framework-SwiftUI%20%2F%20Observation-0071e3?style=flat-square" alt="Framework" />
@@ -25,9 +25,9 @@
 
 **glMusic** 是一款专为 macOS 桌面平台打造的高颜值、高性能音乐流媒体与本地音乐管理客户端。应用采用全原生 **SwiftUI + Swift Concurrency + Observation** 架构编写，彻底告别 Electron 等混合技术方案的高内存占用与卡顿。
 
-更进一步，本项目现已全面集成 **NeteaseCloudMusicAPI-Swift** 原生 SDK 与智能换源解灰引擎，**彻底移除了对外部 Node.js 本地服务的依赖**，客户端直接与网易云官方服务器高并发加密通信；同时支持 **VIP 歌曲 30s/45s 试听限制自动换源破解** 以及 **PlayerBar 原生全音质自由切换 (SoundQualityType)**。
+更进一步，本项目现已全面集成 **NeteaseCloudMusicAPI-Swift** 原生 SDK 与智能换源解灰引擎，**彻底移除了对外部 Node.js 本地服务的依赖**，客户端直接与网易云官方服务器高并发加密通信；同时支持 **VIP 歌曲 30s/45s 试听限制自动换源破解**、**PlayerBar 原生全音质自由切换 (SoundQualityType)**、**无爆音平滑换轨与音频自然交叉渐变 (Crossfade)**。
 
-整体 UI 严格遵循 **macOS Human Interface Guidelines (HIG)**，高度还原 macOS 原生 **Apple Music** 的界面层次感与精致质感——包含原生窗口半透毛玻璃材质、梦幻城市夜景散景流光背景、自适应多色清新主题、悬浮胶囊播放条、**毫秒级 YRC 逐字卡拉OK歌词**、**歌词排版自定义系统**、**音频输出设备即时热切换**、**多语言国际化支持**、**GitHub 自动在线更新**、全功能本地音频导入、离线无损下载管理以及完整的广播与播客电台系统。
+整体 UI 严格遵循 **macOS Human Interface Guidelines (HIG)**，高度还原 macOS 原生 **Apple Music** 的界面层次感与精致质感——包含原生窗口半透毛玻璃材质、梦幻城市夜景散景流光背景、自适应多色清新主题、悬浮胶囊播放条、**全功能桌面悬浮歌词系统**、**菜单栏状态栏迷你控制器**、**毫秒级 YRC 逐字卡拉OK歌词**、**歌词排版自定义系统**、**音频输出设备即时热切换**、**自建歌单管理**、**多语言国际化支持**、**可信原子自动更新**、全功能本地音频导入、离线无损下载管理以及完整的广播与播客电台系统。
 
 ---
 
@@ -57,100 +57,106 @@
   - 原生下拉菜单支持一键切换 **标准 (128K)**、**极高 (320K)**、**无损 (FLAC)**、**Hi-Res**、**高清环绕声**、**沉浸环绕声**、**超清母带**；
   - 播放中支持热切换无缝重载，保持当前进度继续播放，并自动持久化记忆音质偏好。
 
-### 2. 🎤 逐字卡拉OK动效与歌词排版定制系统 (Karaoke & Lyrics Customization)
+### 2. 🪟 独立桌面悬浮歌词系统 (Desktop Lyrics Window)
+- **原生独立悬浮面板 (`DesktopLyricsPanel`)**：
+  - 采用系统级 `NSPanel` 创建无边框置顶悬浮窗，支持全屏游戏与多应用工作时常驻桌面；
+  - **防穿透与锁定模式**：支持一键锁定歌词窗口（`⇧ + ⌘ + L`），锁定后鼠标事件完全穿透至下层桌面，右上角智能显现胶囊解锁按钮；
+  - **无级尺寸拖拽与字号调节**：支持通过右下角拉手实时调整窗口尺寸，并提供 `A-` / `A+` 无级字号调节；
+  - **3 套背景风格自由切换**：深黑半透毛玻璃 (Dark Glass)、浅白高透毛玻璃 (Light Glass)、完全透明 (Transparent)；
+  - **智能双行排版与翻译对照**：第一行毫秒级逐字高亮，第二行自适应呈现双语翻译或下一句预告。
+
+### 3. 🎛️ 状态栏常驻迷你控制器 (MenuBar Mini Player)
+- **原生 macOS 菜单栏常驻交互**：
+  - 系统菜单栏右侧常驻自定义极简透明音乐音符图标，轻点即刻弹出轻量交互控制器；
+  - 呈现高精度微缩专辑封面、曲名与歌手、播放/暂停/切歌、交互式进度滑块、喜欢、实时音量控制；
+  - 提供快捷切换桌面悬浮歌词与唤醒主界面的快捷操作。
+
+### 4. 🎵 音频无爆音微淡出与自然交叉渐变引擎 (Micro-Fade Transition & Seamless Crossfade)
+- **无爆音平滑换轨引擎 (Micro-Fade Transition Engine)**：
+  - 用户手动切歌或换轨时，执行 **20ms 快速微淡出 + 静音安全换轨 + 35ms 优雅微淡入**，彻底消灭 PCM 波形截断产生的硬电爆音与收音机杂音；
+  - 接入快速连点切歌防抖缓冲机制与会话令牌 (`UUID SessionId`)，高频切歌不串音。
+- **音频平滑交叉渐变 (Natural Crossfade)**：
+  - 歌曲末尾自动启用双 AVPlayer 实例进行自然淡出与淡入交叠过渡（时长可在菜单栏自定义）；
+  - 结合播放结束通知拦截机制，在两曲交界处平滑无缝升格为主播放器，彻底解决曲末切歌时下一曲开头跳闪与重播问题。
+
+### 5. 🎤 逐字卡拉OK动效与极致渲染管线 (Karaoke & High-Performance Rendering)
 - **官方毫秒级 YRC 逐字时间轴引擎**：
   - 自动对接网易云官方高级歌词接口，提取毫秒级 `yrc` 逐字时间轴数据；
   - 遇到长音拖拽时流光精准对齐，间奏停顿流光自动暂停，发音秒级同步点亮；
-  - 针对无逐字轴的标准歌词，内置基于字数与语速的自适应演唱时长估算算法，告别长间奏蜗牛漫爬。
-- **纯文字立体柔和渐变高亮**：
-  - 彻底移除了破坏观感的“荧光标记笔”外框矩形色块阴影，实现真正的纯文字笔画点亮；
-  - 采用精心调和的 4-Stop 垂直立体透光渐变，顶部亮白保证辨识度，下半段浸润淡化 60% 的温润主题色，通透晶莹不刺眼。
+  - 针对无逐字轴的标准歌词，内置基于字数与语速的自适应演唱时长估算算法。
+- **GPU 几何 Alpha 遮罩宽度裁剪（0 CoreText 排版重构）**：
+  - 告别高频重构 `LinearGradient` 造成的着色器与文本反复排版开销；
+  - 底层常驻静态暗色文本，顶层常驻静态主题色文本，仅由 CoreAnimation 改变顶层图层 Mask 几何宽度（附带 8pt 边缘平滑羽化），大幅消减 CPU 开销。
+- **SwiftUI 视图树 Equatable 隔离**：
+  - 歌词行全面接入 `Equatable` 协议，行切换时仅重新求值 2 行（上一行与当前行），**跳过其余 98% 的非活动行计算**；
+  - 仅活跃行私有子视图挂载时间监听，非活跃行 0 重绘。
 - **歌词样式全功能自定义面板 (`LyricsStyleSettingsPopover`)**：
   - **排版对齐**：经典居左对齐 / 沉浸大幕居中对齐；
   - **字号规格**：标准 (24pt) / 放大 (30pt) / 巨幕 (36pt)；
   - **动效模式**：实时逐字卡拉OK扫光 / 经典聚光灯聚焦；
-  - **景深虚焦效果 (Depth Blur)**：当前行晶莹聚焦，非当前行随行距平滑呈现 0~2.5pt 电影级大光圈散焦；
+  - **景深虚焦效果 (Depth Blur)**：采用原生对比度与透明度衰减，0 GPU 卷积滤镜损耗；
   - **双语翻译对照**：外语歌词中文对照自由开关；
-  - **上下边缘渐隐**：顶部与底部 48~64pt 柔和羽化遮罩，消除文字硬切。
-- **顶栏两端原生悬停唤醒控制**：
-  - 平日以 `0.33` 优雅淡雅半透明静驻，融入大背景；鼠标靠近时通过 `easeInOut(duration: 0.2)` 丝滑点亮至 `1.0` 完整不透明度；
-  - 绑定完整受击热区，100% 灵敏响应，杜绝被底层滚动列表穿透吞掉点击。
+  - **上下边缘渐隐**：顶部与底部 48~64pt 柔和羽化遮罩。
 
-### 3. 🔊 原生音频输出设备切换与流体音量交互 (Audio Device & Fluid Volume System)
+### 6. ⚡️ 能耗与性能极致优化 (Energy Efficiency & Resource Budget)
+- **真实仪器采样能耗基准 (Time Profiler Verified)**：
+  - **主界面静置播放**：平均 CPU 占用率稳定在约 **6.2%**（主要为 CoreAudio 原生硬件解码开销）；
+  - **全屏动态逐字歌词展开**：平均 CPU 占用率稳定在约 **12% ~ 14%**（与 Apple Music 原生全屏歌词处于同一水准）；
+  - **全屏经典聚光灯模式**：平均 CPU 占用率稳定在约 **6% ~ 7%**。
+- **自适应时间观察器分频 (Adaptive Tick Throttling)**：
+  - 在未打开歌词页面或选择聚光灯模式时，AVPlayer 时间广播自动降频至 **~3.3Hz（每 300ms 一次）**，消减 66% 主线程无意义唤醒；
+  - 仅在进入逐字歌词模式时以 10Hz 全频响应保障丝滑。
+- **1Hz 秒级时钟解耦**：
+  - 播放时间文本解耦为独立的 `currentSecond: Int`，每秒仅排版计算 1 次，消减 90% 的字符串拼接。
+- **内存热缓存机制 (Hot Data Cache)**：
+  - 首页横幅、推荐歌单与榜单接入 `HomeDataCache` 与 `BrowseDataCache`，二次浏览毫秒级秒开。
+
+### 7. 🔐 系统级安全与数据持久化强化 (Security & Data Integrity)
+- **macOS Keychain 钥匙串集成 (`KeychainHelper`)**：
+  - 用户登录凭据与敏感 Cookie 统一通过系统安全钥匙串（`kSecClassGenericPassword`）加密存储，彻底告别明文 UserDefaults 存储；
+  - 启动时自动无缝从旧版配置迁移至 Keychain。
+- **APICache 安全哈希与 150MB LRU 磁盘配额**：
+  - 采用 CryptoKit SHA-256 哈希命名磁盘缓存，彻底杜绝特殊字符与 URL 路径冲突；
+  - 引入 150MB 磁盘缓存预算与 LRU（最近最少使用）自动淘汰清理机制，防止磁盘空间无限膨胀。
+- **严格单所有权下载管理器 (`@MainActor DownloadManager`)**：
+  - 集中并发状态至主线程调度器，彻底废弃 `@unchecked Sendable`；
+  - 采用清晰的任务生命周期状态机，杜绝并发下载与失败重试时的计数不平衡与数据竞争。
+
+### 8. 🔄 可信安装链与原子自动更新 (Atomic Auto-Updater with Rollback)
+- **包完整性与 Codesign 代码签名校验**：
+  - 安装更新前自动通过系统 `codesign --verify --deep --strict` 验证二进制与 Bundle 完整性；
+  - 全流程检查 `Process.terminationStatus` 退出码，解压、挂载与复制任何一步失败立即终止。
+- **原子备份与失败自动秒级回滚 (`.glmusic_backup`)**：
+  - 替换旧 App 前先重命名为备份副本，ditto 写入失败时自动原子级原地恢复旧版本，坚决避免更新失败导致应用损毁无法启动。
+
+### 9. 📁 自建歌单与资料库系统 (Custom Playlists & Library)
+- **自建本地歌单管理 (`CustomPlaylistManager`)**：
+  - 支持创建任意多个个性化歌单、编辑歌单名称与封面；
+  - 任意歌曲右键即可一键「添加到歌单」；
+  - 详情页采用与官方歌单一致的吸顶常驻头部与返回按钮联动布局。
+- **全功能「本地音乐导入」**：
+  - 支持从访达（Finder）直接拖拽单曲、多曲或文件夹导入；
+  - 全面支持 `MP3`、`FLAC`、`M4A`、`WAV`、`AAC`、`AIFF`、`ALAC`、`OGG`；
+  - 自动提取音频内嵌高清封面与 ID3 元数据，优先匹配同目录同名伴生 `.lrc` 文件。
+
+### 10. 🔊 原生音频输出设备切换与流体音量交互 (Audio Device & Fluid Volume System)
 - **CoreAudio 系统级音频输出即时切换**：
-  - 无论在主界面底部播放栏还是全屏歌词页，均可一键弹出设备列表；
-  - 支持即时在内置扬声器、AirPods、蓝牙耳机、HDMI 外接显示器、USB 专业声卡之间热切换，并自动标注 AirPods 与内置设备标识。
-- **SF Symbols 5 原生分层逐级动效 (`.symbolEffect(.replace.byLayer)`)**：
-  - 拖动音量调节滑块时，喇叭锥体底座定点居左锚定（零水平位移跳动）；
-  - 音波弧线如同水波纹般逐层自然生长扩展或柔和褪去，彻底消除生硬硬切与滑块水平震颤。
-- **全局一键快速静音与恢复**：
-  - 点击喇叭图标可一键静音，再次点击平滑恢复此前音量大小。
+  - 随时在内置扬声器、AirPods、蓝牙耳机、HDMI 外接显示器、USB 专业声卡之间热切换，并自动标注 AirPods 专属标识。
+- **SF Symbols 5 原生分层逐级动效**：
+  - 调节音量时喇叭锥体定点居左锚定，弧线逐层生长或褪去，彻底消除生硬硬切与滑块水平震颤。
+- **全局一键快速静音与恢复**：点击喇叭图标一键静音，再次点击平滑恢复此前音量。
 
-### 4. 🌐 国际化多语言系统 (Multi-Language Localization)
+### 11. 🎨 6 套清新自然主题配色系统 (Adaptive Color Themes)
+- 🌿 **薄荷清风 (Mint Breeze)**：灵动清凉，初春微风般听觉呼吸感；
+- 🌊 **海风清蓝 (Sea Breeze)**：澄澈蔚蓝，视野辽阔宁静，还原 Apple 经典水蓝意境；
+- 🌸 **樱花柔粉 (Sakura Pink)**：温润轻盈，升华原生 Apple Music 经典粉质感；
+- 🍵 **抹茶初夏 (Matcha Green)**：自然素雅，森林系治愈色调，柔和护眼；
+- 🍑 **蜜桃日落 (Peach Sunset)**：元气甜橙，落日余晖洒在唱片机上；
+- 🪻 **薰衣草紫 (Lavender Mist)**：梦幻罗兰，雅致轻奢，夜间聆听绝佳。
+
+### 12. 🌐 国际化多语言支持 (Multi-Language Localization)
 - 全面支持 **简体中文 (zh-Hans)**、**English**、**繁體中文 (zh-Hant)** 三种语言环境；
-- 支持在应用内即时切换语言，界面与系统提示全局秒级更新，无需重启应用；
-- 基于 Apple 现代化 `.xcstrings` 字符串目录与统一本地化扩展管理。
-
-### 5. 🔄 GitHub 自动检查更新与平滑升级 (Auto-Update Engine)
-- **启动静默检测**：应用启动时异步联网查询 GitHub Releases 最新版本标签（如 `v0.3.4`）；
-- **原生更新提示浮层**：发现新版本自动弹出版本号对比与详细更新日志；
-- **一键自动化安装**：支持一键在后台静默下载最新 DMG/ZIP 包、自动校验替换并重启应用，免去手动去浏览器下载的繁琐步骤；
-- **菜单栏手动触发**：支持通过顶部菜单栏 `glMusic -> 检查更新...` 随时手动检测。
-
-### 6. 🎵 歌单广场与本地播放历史 (Playlist Square & History)
-- **全新歌单广场 (`PlaylistSquareView`)**：
-  - 提供全部分类标签（华语、流行、摇滚、民谣、电子、轻音乐、影视原声、ACG 等）；
-  - 瀑布流网格展示海量官方精选歌单与亿级播放量热门推荐，支持分页无限加载。
-- **播放历史记录 (`HistoryView`)**：
-  - 自动在本地持久化记录最近收听的每一首歌曲与时间线；
-  - 支持一键连续播放历史足迹、清空播放记录与多选批量操作。
-
-### 7. 🎨 6 套清新主题配色系统 (Adaptive Color Themes)
-- **多套精心调校的自然色彩**：
-  - 🌿 **薄荷清风 (Mint Breeze)**：灵动清凉，营造初春微风般听觉呼吸感；
-  - 🌊 **海风清蓝 (Sea Breeze)**：澄澈蔚蓝，视野辽阔宁静，还原 Apple 经典水蓝意境；
-  - 🌸 **樱花柔粉 (Sakura Pink)**：温润轻盈，升华原生 Apple Music 经典粉质感；
-  - 🍵 **抹茶初夏 (Matcha Green)**：自然素雅，森林系治愈色调，柔和护眼；
-  - 🍑 **蜜桃日落 (Peach Sunset)**：元气甜橙，宛如落日余晖洒在唱片机上；
-  - 🪻 **薰衣草紫 (Lavender Mist)**：梦幻罗兰，雅致轻奢，夜间聆听绝佳。
-- **全应用动态响应式着色**：基于 `@Observable` 的响应式架构，胶囊播放栏、歌曲行高亮、红心收藏、操作按钮、歌词高光渐变与详情页均随主题平滑同步。
-
-### 8. 🌃 城市夜景多层散景流光背景 (Night City Bokeh Ambient System)
-- **系统级原生毛玻璃透光**：依托 macOS 14+ `.containerBackground(.thinMaterial, for: .window)` 窗口底层材质，自然融入 macOS 桌面光影。
-- **19 个四级景深镜头散景 (Depth of Field)**：
-  - **4 处远景大光晕 (Diffuse Cloud)**：直径 230~290px，构建广袤深邃的夜景基底色调；
-  - **4 处中景柔光球 (Soft Orb)**：直径 110~135px，自然景深过渡；
-  - **7 处具象清晰光斑 (Crisp Bokeh Discs)**：直径 48~88px，边缘清晰可见，附带「微亮光圈边缘环 (Soap Bubble Rim)」；
-  - **4 处近景晶莹亮点 (Sparkling Pin)**：高亮微星核点缀，如玻璃反光与夜间星芒。
-- **舒缓浮动与多色混光**：6.5 秒极缓漂移呼吸节奏，主题主色、伴生次色与晶莹高光色交织，非侵入式渲染（零阻碍滚动与点击）。
-
-### 9. 📥 全功能「本地音乐导入」与离线资料库 (Local Music Import)
-- **原生拖拽导入 (Drag & Drop)**：支持从访达（Finder）直接拖拽单首、多首音频文件或整个音乐文件夹到窗口，界面实时展现拖拽引导虚线框。
-- **全局快捷键与原生面板**：支持 `⌘ + O`（或菜单栏 `文件 -> 导入本地音乐...`）唤起系统 `NSOpenPanel` 批量导入。
-- **全主流音频格式兼容**：全面支持 `MP3`、`FLAC`、`M4A`、`WAV`、`AAC`、`AIFF`、`ALAC`、`OGG`。
-- **智能元数据与 ID3 深度提取**：通过 `AVURLAsset` 解析提取歌曲标题、艺人、专辑名称与精确到毫秒的音频时长，无标签时智能清洗文件名。
-- **内嵌高清封面与伴生歌词提取**：
-  - 自动提取音频内嵌高清专辑封面保存在本地；
-  - 优先扫描同目录同名伴生 `.lrc` 文件，自动识别内嵌同步/非同步歌词，支持 UTF-8、GB18030、GBK 智能防乱码。
-- **零缓冲秒起播放与分类筛选**：本地分配安全唯一 ID，本地解码 0 缓冲即刻起播；资料库支持「全部 / 本地导入 / 已下载」多胶囊模式一键切换与搜索过滤。
-
-### 10. 🎧 原生 Apple Music 交互美学与系统级媒体控制
-- **NavigationSplitView 响应式三栏/两栏布局**：自然适配不同显示器与分屏窗口尺寸变化。
-- **悬浮胶囊播放栏 (Floating PlayerBar)**：底部毛玻璃拟物化胶囊，集成播放进度拖拽、音质档位切换、音量微调、一键静音、设备切换、待播清单弹出窗口。
-- **系统级媒体中心深度集成 (`MediaPlayer`)**：
-  - 全面打通 `MPNowPlayingInfoCenter` 与 `MPRemoteCommandCenter`；
-  - 支持键盘物理多媒体按键（播放/暂停/上一曲/下一曲/滑动进度）；
-  - 深度支持 macOS 控制中心、菜单栏媒体小部件与锁屏高清封面展示。
-
-### 11. 📻 广播电台与探索体验 (Radio & DJ)
-- **焦点电台横幅 (Focus Banners)**：大尺寸轮播卡片，悬停微动效与快速试听环。
-- **全品类探索与节目排期**：音乐播客、情感生活、脱口秀、有声书等分类自由探索；电台详情页常驻吸顶导航与批量连续播放。
-- **现在就听 (Home) & 每日推荐 (Daily)**：精选聚焦 Banner、推荐歌单、新歌速递、每日推荐日历卡片每日定时更新。
-
-### 12. ⚡️ 高韧性架构与极致性能 (Architecture & Performance)
-- **线程安全内存缓存 (`actor APICache`)**：对 Banner、推荐歌单、榜单、电台等数据按 TTL 内存缓存，大幅减少重复网络开销。
-- **瞬态故障指数退避重试 (Exponential Backoff)**：网络波动或超时自动平滑重试。
-- **受控并发下载队列 (Max Concurrent = 3)**：批量下载时限流受控，避免网络阻塞或服务器限流。
+- 支持在应用内即时热切换语言，全局秒级更新，无需重启应用。
 
 ---
 
@@ -163,6 +169,9 @@
 | `⌘ + ←` | 上一首 |
 | `⌘ + ↑` | 增加音量 (+5%) |
 | `⌘ + ↓` | 降低音量 (-5%) |
+| `⌘ + L` | 打开 / 关闭全屏动态歌词页面 |
+| `⇧ + ⌘ + D` | 打开 / 隐藏**桌面悬浮歌词** |
+| `⇧ + ⌘ + L` | **锁定 / 解锁**桌面歌词窗口 |
 | `⌘ + O` | **导入本地音频文件或文件夹** |
 | `⌘ + [` | 返回上一级页面 |
 | `ESC` | 退出全屏动态歌词视图 |
@@ -177,23 +186,32 @@ glMusic/
 ├── glMusicApp.swift                  # 应用程序入口：全局环境注入、顶部原生菜单栏、快捷指令
 ├── ContentView.swift                # 主框架总控：SplitView、深层导航栈、全局快捷键、窗口材质
 ├── ThemeManager.swift               # 主题管理器：6套清新配色、歌词柔和渐变、持久化与色温状态
-├── PlayerManager.swift               # 播放核心引擎：AVPlayer、SoundQualityType 动态音质切换、YRC 逐字解析、待播队列、系统媒体控制
-├── DownloadManager.swift             # 离线下载与本地音频导入引擎：ID3提取、LRC解析、并发队列控制
+├── PlayerManager.swift               # 播放核心引擎：AVPlayer、SoundQualityType 切换、交叉渐变换轨、时钟分频
+├── LyricsService.swift               # 歌词领域服务：YRC 逐字解析、LRC 对齐、翻译匹配、O(1) 索引搜索
+├── NowPlayingService.swift           # 系统级媒体集成：MPNowPlayingInfoCenter、MPRemoteCommandCenter、锁屏控制
+├── DesktopLyricsManager.swift        # 桌面歌词管理器：独立 NSPanel 置顶窗口控制、尺寸调节、锁定穿透
+├── CustomPlaylistManager.swift       # 自建本地歌单持久化管理器：歌单创建、增删改查
+├── DownloadManager.swift             # 离线下载与本地导入引擎：@MainActor 集中并发调度、ID3提取、LRC关联
 ├── HistoryManager.swift              # 本地播放历史记录管理器：播放足迹持久化与增删改查
-├── UpdateManager.swift               # 自动更新管理器：GitHub Releases 检查、下载、替换与重启
+├── UpdateManager.swift               # 可信自动更新管理器：Codesign 校验、原子备份回滚、下载替换
 ├── LanguageManager.swift             # 国际化语言管理器：简体/英文/繁体实时免重启无缝切换
 ├── AudioDeviceManager.swift          # CoreAudio 音频设备管理器：输出设备枚举与热切换
 ├── StructModel.swift                 # 侧边栏导航定义与通用数据模型
 │
 ├── Network/
-│   ├── NetworkManager.swift          # 原生直连网络层：基于 NCMClient 的 EAPI/WeAPI 官方直连、智能换源解灰(突破VIP试听)、actor 内存缓存
-│   └── APIModels.swift               # 数据模型映射：LyricLine、LyricWord、Playlist 等 (Sendable / Codable)
+│   ├── NetworkManager.swift          # 原生直连网络层：基于 NCMClient 的 EAPI/WeAPI 官方直连、智能换源解灰
+│   ├── KeychainHelper.swift          # 系统钥匙串辅助类：安全保存敏感用户 Cookie 与 Token
+│   └── APIModels.swift               # 数据模型映射：LyricLine、LyricWord、APISong 等 (Sendable / Codable)
 │
 └── Views/
-    ├── Sidebar.swift                 # 原生侧边栏 (发现 + 资料库 + 歌单列表 + 主题/语言入口)
+    ├── Sidebar.swift                 # 原生侧边栏 (发现 + 资料库 + 自建歌单列表 + 主题/语言入口)
     ├── PlayerBar.swift               # 底部悬浮胶囊播放栏 (进度条/音质即时切换/平滑动效音量/设备切换/待播清单/红心)
-    ├── LyricsView.swift              # 全屏动态歌词视图 (悬停唤醒顶栏/双语对照/毛玻璃封面背景)
-    ├── LyricsStyleSettingsView.swift # 歌词显示样式弹窗 (对齐/字号/景深虚焦/边缘渐隐) & KaraokeLyricLineView
+    ├── MenuBarView.swift             # 系统状态栏常驻下拉迷你播放器组件
+    ├── LyricsView.swift              # 全屏动态歌词视图 (悬停唤醒顶栏/双语对照/毛玻璃封面背景/Equatable隔离)
+    ├── LyricsStyleSettingsView.swift # 歌词显示样式弹窗 (对齐/字号/景深虚焦/边缘渐隐) & GPU 遮罩卡拉OK组件
+    ├── DesktopLyricsView.swift       # 桌面悬浮歌词窗口视图 (深黑/浅白/透明样式、A-/A+字号调节、锁定解锁)
+    ├── CustomPlaylistDetailView.swift# 自建歌单详情页 (吸顶常驻头部联动、歌曲管理)
+    ├── SongCoverThumbnailView.swift  # 统一封面缩略图组件 (异步加载、磁盘缓存)
     ├── PlaylistSquareView.swift      # 「歌单广场」视图 (全部分类标签筛选、高品质歌单瀑布流)
     ├── HistoryView.swift             # 「播放历史」专属视图 (足迹列表、一键播放、记录清理)
     ├── DownloadedSongsView.swift     # 「本地与下载」专属资料库页面 (拖拽接收/胶囊筛选/访达定位)
@@ -219,7 +237,7 @@ glMusic/
     ├── AlbumsView.swift              # 新碟上架网格
     ├── ArtistsView.swift             # 热门歌手网格
     ├── LoginView.swift               # 二维码 / 验证码 双模式登录页面
-    └── WindowToolbarAccessor.swift   # 原生窗口工具栏透明度与标题栏微调辅助器
+    └── WindowToolbarAccessor.swift   # 原生窗口工具栏透明度与标题栏微调辅助器 (单次配置防循环)
 ```
 
 ---
@@ -242,17 +260,20 @@ open glMusic.xcodeproj
 - 在 Xcode 顶部选择目标设备为 **My Mac**；
 - Xcode 会通过 Swift Package Manager 自动解析并下载 `NeteaseCloudMusicAPI-Swift` 原生依赖包；
 - 按下快捷键 `⌘ + R` 即可直接编译并启动应用；
-- 或者在终端使用命令行编译：
+- 或者在终端使用命令行构建 Release 包：
 ```bash
-xcodebuild -project glMusic.xcodeproj -scheme glMusic -destination 'platform=macOS' build
+xcodebuild -project glMusic.xcodeproj -scheme glMusic -destination 'platform=macOS' -configuration Release build
 ```
 
 ---
 
 ## 🛡️ 沙盒与存储机制说明
 
-- 所有下载与导入的离线音乐、歌词与封面安全保存在用户的存储目录中：  
+- **离线音乐与歌词存储**：  
+  所有下载与导入的离线音乐、歌词与封面安全保存在专属存储沙盒目录中：  
   `~/Library/Containers/com.golove.glMusic/Data/Documents/Downloads/`
+- **安全凭证存储**：  
+  网易云账号 Cookie 与认证凭据安全存放在 macOS 系统的加密 Keychain 钥匙串中。
 - 支持通过 `NSWorkspace` 原生唤醒访达直接高亮定位目标音频文件，无需额外的外部文件读写授权弹窗。
 
 ---
@@ -260,7 +281,7 @@ xcodebuild -project glMusic.xcodeproj -scheme glMusic -destination 'platform=mac
 ## ⚠️ 常见问题排查 (FAQ)
 
 ### 安装后 macOS 提示「文件已损坏，无法打开」？
-由于 macOS Gatekeeper 安全机制，从第三方渠道下载未签名的编译包可能被隔离。请在终端执行以下命令解除安全隔离限制：
+由于 macOS Gatekeeper 安全机制，从第三方渠道下载未经过 Apple 公证签名的发布包可能被系统隔离。请在终端执行以下命令解除安全隔离限制：
 ```bash
 sudo xattr -dr com.apple.quarantine /Applications/glMusic.app
 ```

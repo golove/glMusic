@@ -668,6 +668,7 @@ struct PlaylistCard: View {
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @State private var isHovering = false
+    @State private var hoverDebounceTask: Task<Void, Never>?
     @State private var isPlayHovering = false
     @State private var isLoadingSongs = false
 
@@ -678,17 +679,13 @@ struct PlaylistCard: View {
                 Button {
                     onSelect?()
                 } label: {
-                    AsyncImage(url: URL(string: playlist.displayCover ?? "")) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            Rectangle().fill(.quaternary)
-                                .overlay(Image(systemName: "music.note.list").font(.title).foregroundStyle(.tertiary))
-                        }
-                    }
+                    CachedAsyncCoverView(
+                        urlString: playlist.displayCover,
+                        placeholderIcon: "music.note.list",
+                        targetSize: 170,
+                        cornerRadius: 10
+                    )
                     .frame(width: 170, height: 170)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(themeManager.accentColor, lineWidth: isFocused ? 2.5 : 0)
@@ -696,49 +693,60 @@ struct PlaylistCard: View {
                 }
                 .buttonStyle(.plain)
                 .shadow(
-                    color: isFocused ? themeManager.accentColor.opacity(0.4) : .black.opacity(isHovering ? 0.18 : 0.1),
-                    radius: isFocused ? 12 : (isHovering ? 10 : 6),
+                    color: isFocused ? themeManager.accentColor.opacity(0.4) : .black.opacity(isHovering ? 0.20 : 0.08),
+                    radius: isFocused ? 10 : 6,
                     y: isFocused ? 2 : 4
                 )
                 .scaleEffect((isHovering || isFocused) ? 1.03 : 1.0)
 
                 // 悬停时或获得焦点时显示快捷播放按钮 (顶层独立 Button，点击仅播放歌曲)
-                if isHovering || isFocused {
-                    Button {
-                        loadAndPlay()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(themeManager.accentColor)
-                                .frame(width: 38, height: 38)
-                                .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                Button {
+                    loadAndPlay()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(themeManager.accentColor)
+                            .frame(width: 38, height: 38)
+                            .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
 
-                            if isLoadingSongs {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(.white)
-                            } else {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .offset(x: 1.5)
-                            }
-                        }
-                        .scaleEffect(isPlayHovering ? 1.08 : 1.0)
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { h in
-                        withAnimation(.easeInOut(duration: 0.1)) {
-                            isPlayHovering = h
+                        if isLoadingSongs {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                                .offset(x: 1.5)
                         }
                     }
-                    .padding(10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .scaleEffect(isPlayHovering ? 1.08 : 1.0)
                 }
+                .buttonStyle(.plain)
+                .onHover { h in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isPlayHovering = h
+                    }
+                }
+                .padding(10)
+                .opacity((isHovering || isFocused) ? 1 : 0)
+                .allowsHitTesting(isHovering || isFocused)
             }
-            .onHover { h in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isHovering = h
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .onHover { hovering in
+                hoverDebounceTask?.cancel()
+                if hovering {
+                    hoverDebounceTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 45_000_000) // 45ms
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isHovering = true
+                        }
+                    }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isHovering = false
+                    }
                 }
             }
 
@@ -822,23 +830,10 @@ struct NewSongRow: View {
             .frame(width: 28)
 
             // Cover
-            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().aspectRatio(contentMode: .fill)
-                case .failure:
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.secondary.opacity(0.12))
-                        .overlay(Image(systemName: "music.note").font(.system(size: 16)).foregroundStyle(.tertiary))
-                default:
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.secondary.opacity(0.08))
-                        .overlay(ProgressView().controlSize(.mini))
-                }
-            }
-            .frame(width: 44, height: 44)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .padding(.trailing, 10)
+            SongCoverThumbnailView(song: song, size: 44)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .padding(.trailing, 10)
 
             // Title & Artist
             VStack(alignment: .leading, spacing: 3) {

@@ -73,8 +73,9 @@ enum DownloadStatus: Equatable {
 
 // MARK: - Download Manager
 
+@MainActor
 @Observable
-final class DownloadManager: NSObject, @unchecked Sendable {
+final class DownloadManager: NSObject {
     static let shared = DownloadManager()
 
     // MARK: - State
@@ -103,12 +104,12 @@ final class DownloadManager: NSObject, @unchecked Sendable {
 
     private let maxConcurrentDownloads = 3
     private var waitingQueue: [APISong] = []
-    private var activeTaskCount: Int = 0
+    private var waitingSongIds: Set<Int> = []
+    private var activeSongIds: Set<Int> = []
 
     // MARK: - Internal Tasks & Metadata
 
     private var urlSession: URLSession!
-    private let lock = NSLock()
     private var downloadTasks: [Int: URLSessionDownloadTask] = [:]
     private var pendingItems: [Int: (song: DownloadedSong, destination: URL)] = [:]
 
@@ -152,9 +153,7 @@ final class DownloadManager: NSObject, @unchecked Sendable {
     }
 
     func isWaiting(_ songId: Int) -> Bool {
-        lock.withLock {
-            waitingQueue.contains(where: { $0.id == songId })
-        }
+        waitingSongIds.contains(songId)
     }
 
     func downloadProgress(_ songId: Int) -> Double? {
@@ -216,10 +215,9 @@ final class DownloadManager: NSObject, @unchecked Sendable {
     func downloadSong(_ song: APISong) {
         if isDownloaded(song.id) || isDownloading(song.id) { return }
 
-        lock.withLock {
-            if !waitingQueue.contains(where: { $0.id == song.id }) {
-                waitingQueue.append(song)
-            }
+        if !waitingSongIds.contains(song.id) {
+            waitingQueue.append(song)
+            waitingSongIds.insert(song.id)
         }
         processQueue()
     }
@@ -228,41 +226,34 @@ final class DownloadManager: NSObject, @unchecked Sendable {
         let toQueue = songs.filter { !isDownloaded($0.id) && !isDownloading($0.id) }
         guard !toQueue.isEmpty else { return }
 
-        lock.withLock {
-            for song in toQueue {
-                if !waitingQueue.contains(where: { $0.id == song.id }) {
-                    waitingQueue.append(song)
-                }
+        for song in toQueue {
+            if !waitingSongIds.contains(song.id) {
+                waitingQueue.append(song)
+                waitingSongIds.insert(song.id)
             }
         }
         processQueue()
     }
 
     private func processQueue() {
-        var nextSong: APISong? = nil
-        lock.withLock {
-            if activeTaskCount < maxConcurrentDownloads && !waitingQueue.isEmpty {
-                nextSong = waitingQueue.removeFirst()
-                activeTaskCount += 1
-            }
-        }
+        while activeSongIds.count < maxConcurrentDownloads && !waitingQueue.isEmpty {
+            let song = waitingQueue.removeFirst()
+            waitingSongIds.remove(song.id)
+            activeSongIds.insert(song.id)
 
-        guard let song = nextSong else { return }
-
-        DispatchQueue.main.async {
             self.activeDownloads[song.id] = 0.02
             self.downloadErrors.removeValue(forKey: song.id)
-        }
 
-        Task {
-            await startDownloadTask(for: song)
+            Task {
+                await startDownloadTask(for: song)
+            }
         }
     }
 
     private func finishActiveTask(for songId: Int) {
-        lock.withLock {
-            activeTaskCount = max(0, activeTaskCount - 1)
-        }
+        guard activeSongIds.remove(songId) != nil else { return }
+        pendingItems.removeValue(forKey: songId)
+        downloadTasks.removeValue(forKey: songId)
         processQueue()
     }
 
@@ -284,6 +275,9 @@ final class DownloadManager: NSObject, @unchecked Sendable {
                   let remoteAudioURL = URL(string: finalUrl) else {
                 throw NSError(domain: "DownloadManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "无法获取可下载的音频播放源"])
             }
+
+            // 检查在此异步网络阶段是否已被用户取消
+            guard activeSongIds.contains(song.id) else { return }
 
             // 2. 推断音频文件扩展名
             let ext = remoteAudioURL.pathExtension.isEmpty ? "mp3" : remoteAudioURL.pathExtension
@@ -318,6 +312,9 @@ final class DownloadManager: NSObject, @unchecked Sendable {
                 }
             }
 
+            // 再次检查在此异步网络阶段是否已被用户取消
+            guard activeSongIds.contains(song.id) else { return }
+
             // 5. 构建元数据模型
             let downloadedSong = DownloadedSong(
                 id: song.id,
@@ -337,34 +334,27 @@ final class DownloadManager: NSObject, @unchecked Sendable {
             let task = urlSession.downloadTask(with: remoteAudioURL)
             task.taskDescription = "\(song.id)"
 
-            lock.withLock {
-                pendingItems[song.id] = (downloadedSong, audioDestination)
-                downloadTasks[song.id] = task
-            }
+            pendingItems[song.id] = (downloadedSong, audioDestination)
+            downloadTasks[song.id] = task
 
             task.resume()
         } catch {
-            await MainActor.run {
-                self.activeDownloads.removeValue(forKey: song.id)
-                self.downloadErrors[song.id] = error.localizedDescription
-            }
+            self.activeDownloads.removeValue(forKey: song.id)
+            self.downloadErrors[song.id] = error.localizedDescription
             finishActiveTask(for: song.id)
         }
     }
 
     func cancelDownload(_ songId: Int) {
-        lock.withLock {
-            waitingQueue.removeAll(where: { $0.id == songId })
-        }
-        let task = lock.withLock { () -> URLSessionDownloadTask? in
-            pendingItems.removeValue(forKey: songId)
-            return downloadTasks.removeValue(forKey: songId)
-        }
+        waitingQueue.removeAll(where: { $0.id == songId })
+        waitingSongIds.remove(songId)
+
+        let task = downloadTasks.removeValue(forKey: songId)
+        pendingItems.removeValue(forKey: songId)
         task?.cancel()
-        DispatchQueue.main.async {
-            self.activeDownloads.removeValue(forKey: songId)
-            self.downloadErrors.removeValue(forKey: songId)
-        }
+
+        activeDownloads.removeValue(forKey: songId)
+        downloadErrors.removeValue(forKey: songId)
         finishActiveTask(for: songId)
     }
 
@@ -372,6 +362,7 @@ final class DownloadManager: NSObject, @unchecked Sendable {
 
     func deleteDownload(_ songId: Int) {
         if let idx = downloadedSongs.firstIndex(where: { $0.id == songId }) {
+            guard downloadedSongs.indices.contains(idx) else { return }
             let song = downloadedSongs[idx]
             // 删除音频
             let audioURL = downloadsDirectory.appendingPathComponent(song.fileName)
@@ -829,43 +820,23 @@ final class DownloadManager: NSObject, @unchecked Sendable {
         let safePositive = positive == 0 ? 1 : positive
         return -safePositive
     }
-}
 
-// MARK: - URLSessionDownloadDelegate
+    // MARK: - Download Lifecycle Handlers (MainActor Isolated)
 
-extension DownloadManager: URLSessionDownloadDelegate {
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let idStr = downloadTask.taskDescription, let songId = Int(idStr) else { return }
-        let progress: Double
-        if totalBytesExpectedToWrite > 0 {
-            progress = min(max(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite), 0.05), 0.99)
-        } else {
-            progress = 0.5
-        }
-
-        DispatchQueue.main.async {
-            self.activeDownloads[songId] = progress
-        }
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let idStr = downloadTask.taskDescription, let songId = Int(idStr) else { return }
-
-        // 1. 线程安全地同步取出待处理项
-        let item: (song: DownloadedSong, destination: URL)? = lock.withLock {
-            _ = downloadTasks.removeValue(forKey: songId)
-            return pendingItems.removeValue(forKey: songId)
-        }
-
-        guard let item else {
-            print("⚠️ 未找到 songId=\(songId) 的待保存下载信息")
+    private func handleDownloadFinished(songId: Int, stagedFile: URL, actualFileSize: Int64) {
+        defer {
+            try? FileManager.default.removeItem(at: stagedFile)
             finishActiveTask(for: songId)
+        }
+
+        guard let item = pendingItems.removeValue(forKey: songId) else {
+            print("⚠️ 未找到 songId=\(songId) 的待保存下载信息")
             return
         }
+
         var song = item.song
         let destination = item.destination
 
-        // 2. 同步完成文件持久化移动，防止临时文件被系统回收
         do {
             let targetDir = destination.deletingLastPathComponent()
             if !FileManager.default.fileExists(atPath: targetDir.path) {
@@ -877,51 +848,105 @@ extension DownloadManager: URLSessionDownloadDelegate {
             }
 
             do {
-                try FileManager.default.moveItem(at: location, to: destination)
+                try FileManager.default.moveItem(at: stagedFile, to: destination)
             } catch {
-                try FileManager.default.copyItem(at: location, to: destination)
+                try FileManager.default.copyItem(at: stagedFile, to: destination)
             }
 
-            let attrs = try FileManager.default.attributesOfItem(atPath: destination.path)
-            let fileSize = (attrs[.size] as? Int64) ?? 0
-            song.fileSize = fileSize
+            song.fileSize = actualFileSize
 
-            // 3. 在主线程更新 UI 响应式状态与持久化元数据
-            DispatchQueue.main.async {
-                self.downloadedSongs.removeAll(where: { $0.id == songId })
-                self.downloadedSongs.insert(song, at: 0)
-                self.saveMetadata()
-                self.activeDownloads.removeValue(forKey: songId)
-                self.downloadErrors.removeValue(forKey: songId)
-                print("✅ 歌曲已成功下载至: \(destination.lastPathComponent) (\(song.fileSizeText))")
-            }
+            downloadedSongs.removeAll(where: { $0.id == songId })
+            downloadedSongs.insert(song, at: 0)
+            saveMetadata()
+            activeDownloads.removeValue(forKey: songId)
+            downloadErrors.removeValue(forKey: songId)
+            print("✅ 歌曲已成功下载至: \(destination.lastPathComponent) (\(song.fileSizeText))")
         } catch {
             print("❌ 移动已下载音频失败: \(error)")
-            DispatchQueue.main.async {
-                self.activeDownloads.removeValue(forKey: songId)
-                self.downloadErrors[songId] = error.localizedDescription
-            }
+            activeDownloads.removeValue(forKey: songId)
+            downloadErrors[songId] = error.localizedDescription
         }
-
-        finishActiveTask(for: songId)
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    private func handleDownloadFailed(songId: Int, error: String) {
+        activeDownloads.removeValue(forKey: songId)
+        downloadErrors[songId] = error
+        print("❌ 下载任务出错 [\(songId)]: \(error)")
+        finishActiveTask(for: songId)
+    }
+}
+
+// MARK: - URLSessionDownloadDelegate
+
+extension DownloadManager: URLSessionDownloadDelegate {
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard let idStr = downloadTask.taskDescription, let songId = Int(idStr) else { return }
+        let progress: Double
+        if totalBytesExpectedToWrite > 0 {
+            progress = min(max(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite), 0.05), 0.99)
+        } else {
+            progress = 0.5
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self = self, self.activeSongIds.contains(songId) else { return }
+            self.activeDownloads[songId] = progress
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard let idStr = downloadTask.taskDescription, let songId = Int(idStr) else { return }
+
+        // 1. 校验 HTTP 状态码
+        if let httpResponse = downloadTask.response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+            let errorMsg = "下载服务器响应错误 (HTTP \(httpResponse.statusCode))"
+            Task { @MainActor [weak self] in
+                self?.handleDownloadFailed(songId: songId, error: errorMsg)
+            }
+            return
+        }
+
+        // 2. 校验文件实际大小（防止 HTML 403/404 伪装错误页或空文件）
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: location.path)[.size] as? Int64) ?? 0
+        if fileSize < 1024 {
+            let isHtml = (try? String(contentsOf: location, encoding: .utf8))?.contains("<html") ?? false
+            let errorMsg = isHtml ? "下载音频防盗链拦截或链接失效" : "下载音频文件损坏或不完整"
+            Task { @MainActor [weak self] in
+                self?.handleDownloadFailed(songId: songId, error: errorMsg)
+            }
+            return
+        }
+
+        // 3. 在 delegate 返回前，立即将 location 移动到独立的暂存区，防止 URLSession 退出时自动删除临时文件
+        let stagingURL = FileManager.default.temporaryDirectory.appendingPathComponent("dl_stage_\(songId)_\(UUID().uuidString)")
+        do {
+            try FileManager.default.moveItem(at: location, to: stagingURL)
+        } catch {
+            Task { @MainActor [weak self] in
+                self?.handleDownloadFailed(songId: songId, error: error.localizedDescription)
+            }
+            return
+        }
+
+        // 4. 派发给主线程完成原子落盘与状态更新
+        Task { @MainActor [weak self] in
+            self?.handleDownloadFinished(songId: songId, stagedFile: stagingURL, actualFileSize: fileSize)
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let idStr = task.taskDescription, let songId = Int(idStr) else { return }
 
-        lock.withLock {
-            _ = pendingItems.removeValue(forKey: songId)
-            _ = downloadTasks.removeValue(forKey: songId)
-        }
-
-        if let error = error, (error as NSError).code != NSURLErrorCancelled {
-            DispatchQueue.main.async {
-                self.activeDownloads.removeValue(forKey: songId)
-                self.downloadErrors[songId] = error.localizedDescription
-                print("❌ 下载任务出错: \(error)")
+        if let error = error {
+            if (error as NSError).code != NSURLErrorCancelled {
+                Task { @MainActor [weak self] in
+                    self?.handleDownloadFailed(songId: songId, error: error.localizedDescription)
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    self?.finishActiveTask(for: songId)
+                }
             }
         }
-
-        finishActiveTask(for: songId)
     }
 }

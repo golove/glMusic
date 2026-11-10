@@ -40,31 +40,30 @@ struct HistoryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if historyManager.historyItems.isEmpty {
-                    emptyStateView
-                } else if filteredItems.isEmpty {
-                    noSearchResultView
-                } else {
-                    // 歌曲列表
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                            HistoryRowView(
-                                item: item,
-                                index: index + 1,
-                                allSongs: filteredSongs,
-                                onRemove: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        historyManager.remove(item: item)
-                                    }
+            if historyManager.historyItems.isEmpty {
+                emptyStateView
+                    .padding(.top, 40)
+            } else if filteredItems.isEmpty {
+                noSearchResultView
+                    .padding(.top, 40)
+            } else {
+                // 歌曲列表
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                        HistoryRowView(
+                            item: item,
+                            index: index + 1,
+                            allSongs: filteredSongs,
+                            onRemove: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    historyManager.remove(item: item)
                                 }
-                            )
-                        }
+                            }
+                        )
                     }
-                    .padding(.top, 4)
                 }
-
-                Spacer(minLength: 120)
+                .padding(.top, 4)
+                .padding(.bottom, 120)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -305,11 +304,16 @@ private struct HistoryRowView: View {
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @State private var isHovered = false
+    @State private var hoverDebounceTask: Task<Void, Never>?
 
     private var song: APISong { item.song }
 
     var body: some View {
         let isCurrent = player.currentSong?.id == song.id
+        let isLiked = player.isLiked(song.id)
+        let isDownloaded = DownloadManager.shared.downloadedSongIds.contains(song.id)
+        let isDownloading = DownloadManager.shared.activeDownloads[song.id] != nil || DownloadManager.shared.isWaiting(song.id)
+        let showActions = isHovered || isLiked || isDownloaded || isDownloading
 
         HStack(spacing: 0) {
             // 序号 / 状态指示器
@@ -332,31 +336,8 @@ private struct HistoryRowView: View {
 
             // 封面 + 标题 + 操作按钮
             HStack(spacing: 10) {
-                // 封面
-                Group {
-                    if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
-                       let img = NSImage(contentsOf: localURL) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } else {
-                        AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                            switch phase {
-                            case .success(let img):
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            default:
-                                Rectangle().fill(.quaternary)
-                                    .overlay(
-                                        Image(systemName: "music.note")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(.tertiary)
-                                    )
-                            }
-                        }
-                    }
-                }
-                .frame(width: 36, height: 36)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                // 封面采用纯底层的 ImageIO 下采样微缩图引擎 (带 120ms 滚动节流)
+                SongCoverThumbnailView(songId: song.id, coverUrl: song.coverUrl, size: 36)
 
                 // 标题与操作
                 HStack(spacing: 8) {
@@ -365,18 +346,20 @@ private struct HistoryRowView: View {
                         .foregroundStyle(isCurrent ? themeManager.accentColor : .primary)
                         .lineLimit(1)
 
-                    if isHovered || player.isLiked(song.id) || DownloadManager.shared.isDownloaded(song.id) {
+                    HStack(spacing: 6) {
                         Button {
                             player.toggleLike(for: song)
                         } label: {
-                            Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
+                            Image(systemName: isLiked ? "heart.fill" : "heart")
                                 .font(.system(size: 11))
-                                .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
+                                .foregroundStyle(isLiked ? themeManager.accentColor : .secondary)
                         }
                         .buttonStyle(.plain)
 
-                        DownloadButton(song: song, iconSize: 11)
+                        DownloadButton(song: song, iconSize: 11, hasContextMenu: false)
                     }
+                    .opacity(showActions ? 1 : 0)
+                    .allowsHitTesting(showActions)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -413,19 +396,19 @@ private struct HistoryRowView: View {
             }
             .frame(width: 120, alignment: .leading)
 
-            // 时长与单行删除
+            // 时长与单行删除 (常驻占位，仅透明度切换避免重排)
             HStack(spacing: 8) {
-                if isHovered {
-                    Button(action: onRemove) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, height: 18)
-                            .background(Color.primary.opacity(0.06), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("从历史中移除".localized)
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .background(Color.primary.opacity(0.06), in: Circle())
                 }
+                .buttonStyle(.plain)
+                .help("从历史中移除".localized)
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
 
                 Text(song.durationText)
                     .font(.system(size: 13).monospacedDigit())
@@ -436,13 +419,25 @@ private struct HistoryRowView: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 6)
+        .frame(height: 48) // 锁定固定 48px 行高
         .background(
             isHovered
                 ? Color.primary.opacity(0.04)
                 : (isCurrent ? themeManager.accentColor.opacity(0.06) : Color.clear)
         )
         .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            hoverDebounceTask?.cancel()
+            if hovering {
+                hoverDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 80_000_000) // 80ms 防抖
+                    guard !Task.isCancelled else { return }
+                    isHovered = true
+                }
+            } else {
+                isHovered = false
+            }
+        }
         .onTapGesture {
             if let idx = allSongs.firstIndex(where: { $0.id == song.id }) {
                 player.playAll(allSongs, from: idx)
@@ -481,7 +476,7 @@ private struct HistoryRowView: View {
                       systemImage: player.isLiked(song.id) ? "heart.slash" : "heart")
             }
 
-            if DownloadManager.shared.isDownloaded(song.id) {
+            if DownloadManager.shared.downloadedSongIds.contains(song.id) {
                 Button {
                     DownloadManager.shared.revealInFinder(song.id)
                 } label: {

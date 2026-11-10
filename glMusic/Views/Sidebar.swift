@@ -57,17 +57,12 @@ struct Sidebar: View {
                                 .lineLimit(1)
                         } icon: {
                             if let cover = pl.coverUrl, !cover.isEmpty {
-                                AsyncImage(url: URL(string: cover)) { phase in
-                                    switch phase {
-                                    case .success(let img):
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    default:
-                                        Image(systemName: "music.note.list")
-                                            .foregroundStyle(themeManager.accentColor)
-                                    }
-                                }
-                                .frame(width: 20, height: 20)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                CachedAsyncCoverView(
+                                    urlString: cover,
+                                    placeholderIcon: "music.note.list",
+                                    targetSize: 20,
+                                    cornerRadius: 3
+                                )
                             } else {
                                 Image(systemName: "music.note.list")
                                     .foregroundStyle(themeManager.accentColor)
@@ -112,17 +107,12 @@ struct Sidebar: View {
                                 Text(pl.name)
                                     .lineLimit(1)
                             } icon: {
-                                AsyncImage(url: URL(string: pl.displayCover ?? "")) { phase in
-                                    switch phase {
-                                    case .success(let img):
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    default:
-                                        Image(systemName: "music.note.list")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .frame(width: 20, height: 20)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                CachedAsyncCoverView(
+                                    urlString: pl.displayCover,
+                                    placeholderIcon: "music.note.list",
+                                    targetSize: 20,
+                                    cornerRadius: 3
+                                )
                             }
                             .tag("playlist_\(pl.id)")
                         }
@@ -137,17 +127,12 @@ struct Sidebar: View {
                                 Text(pl.name)
                                     .lineLimit(1)
                             } icon: {
-                                AsyncImage(url: URL(string: pl.displayCover ?? "")) { phase in
-                                    switch phase {
-                                    case .success(let img):
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    default:
-                                        Image(systemName: "music.note.list")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .frame(width: 20, height: 20)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                CachedAsyncCoverView(
+                                    urlString: pl.displayCover,
+                                    placeholderIcon: "music.note.list",
+                                    targetSize: 20,
+                                    cornerRadius: 3
+                                )
                             }
                             .tag("playlist_\(pl.id)")
                         }

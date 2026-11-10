@@ -31,56 +31,44 @@ struct DailyRecommendView: View {
         VStack{
             
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Header
-                  
-
-                    if isLoading {
-                        ProgressView("加载每日推荐...".localized)
-                            .frame(maxWidth: .infinity, minHeight: 200)
-                        
-                      
-                        
-                    } else if let error = errorMessage {
-                        VStack(spacing: 12) {
-                            Image(systemName: "lock.circle")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.tertiary)
-                            Text(error)
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                            Text("每日推荐需要登录网易云音乐账号".localized)
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
-                        }
+                if isLoading {
+                    ProgressView("加载每日推荐...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
-                    } else if songs.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "music.note")
-                                .font(.system(size: 36))
-                                .foregroundStyle(.tertiary)
-                            Text("暂无推荐歌曲".localized)
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 200)
-                    } else {
-                       
-
-                       
-
-                        // Song List
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
-                                UnifiedSongRow(
-                                    song: song,
-                                    index: idx + 1,
-                                    allSongs: songs
-                                )
-                            }
-                        }
-//                        .padding(.bottom, 80)
+                } else if let error = errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "lock.circle")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.tertiary)
+                        Text(error)
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        Text("每日推荐需要登录网易云音乐账号".localized)
+                            .font(.subheadline)
+                            .foregroundStyle(.tertiary)
                     }
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                } else if songs.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.tertiary)
+                        Text("暂无推荐歌曲".localized)
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                } else {
+                    // Song List
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
+                            UnifiedSongRow(
+                                song: song,
+                                index: idx + 1,
+                                allSongs: songs
+                            )
+                        }
+                    }
+                    .padding(.bottom, 80)
                 }
             }
         }

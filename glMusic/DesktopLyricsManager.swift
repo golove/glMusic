@@ -26,6 +26,48 @@ enum DesktopLyricsBackgroundStyle: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - Safe Non-Loop Panel & HostingView
+// 彻底阻断 AppKit Auto Layout 约束更新循环 (彻底消除 Update Constraints in Window pass 崩溃)
+
+final class DesktopLyricsPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+
+    private var isUpdatingConstraints = false
+
+    override func updateConstraintsIfNeeded() {
+        guard !isUpdatingConstraints else { return }
+        isUpdatingConstraints = true
+        super.updateConstraintsIfNeeded()
+        isUpdatingConstraints = false
+    }
+
+    override func layoutIfNeeded() {
+        guard !isUpdatingConstraints else { return }
+        isUpdatingConstraints = true
+        super.layoutIfNeeded()
+        isUpdatingConstraints = false
+    }
+}
+
+final class DesktopLyricsHostingView<Content: View>: NSHostingView<Content> {
+    private var isUpdating = false
+
+    override func updateConstraints() {
+        guard !isUpdating else { return }
+        isUpdating = true
+        super.updateConstraints()
+        isUpdating = false
+    }
+
+    override func layout() {
+        guard !isUpdating else { return }
+        isUpdating = true
+        super.layout()
+        isUpdating = false
+    }
+}
+
 @MainActor
 @Observable
 final class DesktopLyricsManager {
@@ -153,7 +195,7 @@ final class DesktopLyricsManager {
 
         let panelRect = NSRect(x: defaultOriginX, y: defaultOriginY, width: initialWidth, height: initialHeight)
 
-        let newPanel = NSPanel(
+        let newPanel = DesktopLyricsPanel(
             contentRect: panelRect,
             styleMask: [.borderless, .resizable, .nonactivatingPanel],
             backing: .buffered,
@@ -175,7 +217,7 @@ final class DesktopLyricsManager {
             .environment(themeManager)
             .environment(LanguageManager.shared)
 
-        let hostingView = NSHostingView(rootView: rootView)
+        let hostingView = DesktopLyricsHostingView(rootView: rootView)
         hostingView.frame = NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight)
         hostingView.autoresizingMask = [.width, .height]
         hostingView.sizingOptions = [] // 核心关键：禁止 NSHostingView 向 NSPanel 施加 Auto Layout 最小/最大/固有内容尺寸约束，彻底根治 Update Constraints in Window 崩溃循环
@@ -389,7 +431,7 @@ final class DesktopLyricsManager {
 
         let width: CGFloat = 320
         let height: CGFloat = 345
-        let panel = NSPanel(
+        let panel = DesktopLyricsPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -409,7 +451,7 @@ final class DesktopLyricsManager {
         .environment(ThemeManager.shared)
         .environment(LanguageManager.shared)
 
-        let hostingView = NSHostingView(rootView: contentView)
+        let hostingView = DesktopLyricsHostingView(rootView: contentView)
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: height)
         hostingView.autoresizingMask = [.width, .height]
         hostingView.sizingOptions = []

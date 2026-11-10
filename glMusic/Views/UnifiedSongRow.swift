@@ -20,13 +20,19 @@ struct UnifiedSongRow: View {
     var horizontalPadding: CGFloat = 24
     var verticalPadding: CGFloat = 6
     var onTap: (() -> Void)? = nil
+    var onDeleteFromPlaylist: (() -> Void)? = nil
 
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @State private var isHovered: Bool = false
+    @State private var hoverDebounceTask: Task<Void, Never>?
 
     var body: some View {
         let isCurrent = player.currentSong?.id == song.id
+        let isLiked = player.isLiked(song.id)
+        let isDownloaded = DownloadManager.shared.downloadedSongIds.contains(song.id)
+        let isDownloading = DownloadManager.shared.activeDownloads[song.id] != nil || DownloadManager.shared.isWaiting(song.id)
+        let showActions = isHovered || isLiked || isDownloaded || isDownloading
 
         HStack(spacing: 0) {
             // MARK: - 序号 / 播放指示器
@@ -52,30 +58,7 @@ struct UnifiedSongRow: View {
             // MARK: - 封面 + 歌曲标题 + 操作徽标
             HStack(spacing: 10) {
                 if showCover {
-                    Group {
-                        if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
-                           let img = NSImage(contentsOf: localURL) {
-                            Image(nsImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } else {
-                            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                                switch phase {
-                                case .success(let img):
-                                    img.resizable().aspectRatio(contentMode: .fill)
-                                default:
-                                    Rectangle().fill(.quaternary)
-                                        .overlay(
-                                            Image(systemName: "music.note")
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.tertiary)
-                                        )
-                                }
-                            }
-                        }
-                    }
-                    .frame(width: 36, height: 36)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    SongCoverThumbnailView(songId: song.id, coverUrl: song.coverUrl, size: 36)
                 }
 
                 HStack(spacing: 8) {
@@ -84,18 +67,21 @@ struct UnifiedSongRow: View {
                         .foregroundStyle(isCurrent ? themeManager.accentColor : .primary)
                         .lineLimit(1)
 
-                    if isHovered || player.isLiked(song.id) || DownloadManager.shared.isDownloaded(song.id) || DownloadManager.shared.isDownloading(song.id) {
+                    // 保持固定布局占位，仅透明度切换，避免滚动过程中的文本重排与布局抖动 (Layout Thrashing)
+                    HStack(spacing: 6) {
                         Button {
                             player.toggleLike(for: song)
                         } label: {
-                            Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
+                            Image(systemName: isLiked ? "heart.fill" : "heart")
                                 .font(.system(size: 11))
-                                .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
+                                .foregroundStyle(isLiked ? themeManager.accentColor : .secondary)
                         }
                         .buttonStyle(.plain)
 
-                        DownloadButton(song: song, iconSize: 11)
+                        DownloadButton(song: song, iconSize: 11, hasContextMenu: false)
                     }
+                    .opacity(showActions ? 1 : 0)
+                    .allowsHitTesting(showActions)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -126,13 +112,26 @@ struct UnifiedSongRow: View {
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
+        .frame(height: 48)
         .background(
             isHovered
                 ? Color.primary.opacity(0.04)
                 : (isCurrent ? themeManager.accentColor.opacity(0.06) : Color.clear)
         )
         .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            hoverDebounceTask?.cancel()
+            if hovering {
+                // 滚动防抖抑制：当用户连续滑行滚动时，行掠过光标不足 80ms 则完全不触发悬停状态变迁
+                hoverDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 80_000_000) // 80ms
+                    guard !Task.isCancelled else { return }
+                    isHovered = true
+                }
+            } else {
+                isHovered = false
+            }
+        }
         .onTapGesture {
             if let customTap = onTap {
                 customTap()
@@ -164,9 +163,18 @@ struct UnifiedSongRow: View {
             // MARK: - 添加到自建歌单
             AddToPlaylistMenu(song: song)
 
+            if let onDelete = onDeleteFromPlaylist {
+                Divider()
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("从歌单中移除".localized, systemImage: "trash")
+                }
+            }
+
             Divider()
 
-            if DownloadManager.shared.isDownloaded(song.id) {
+            if DownloadManager.shared.downloadedSongIds.contains(song.id) {
                 Button {
                     DownloadManager.shared.revealInFinder(song.id)
                 } label: {

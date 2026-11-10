@@ -10,8 +10,9 @@ import SwiftUI
 struct DownloadButton: View {
     let song: APISong
     var iconSize: CGFloat = 12
+    var hasContextMenu: Bool = false
     @Environment(ThemeManager.self) private var themeManager
-    @State private var downloadManager = DownloadManager.shared
+    private var downloadManager: DownloadManager { DownloadManager.shared }
 
     var body: some View {
         let status = downloadManager.downloadStatus(song.id)
@@ -64,41 +65,55 @@ struct DownloadButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            if downloadManager.isDownloaded(song.id) {
-                Button {
-                    downloadManager.revealInFinder(song.id)
-                } label: {
-                    Label("在访达中显示".localized, systemImage: "folder")
-                }
+        .modifier(OptionalContextMenuModifier(hasContextMenu: hasContextMenu, song: song))
+    }
+}
 
-                Button {
-                    downloadManager.deleteDownload(song.id)
-                    downloadManager.downloadSong(song)
-                } label: {
-                    Label("重新下载".localized, systemImage: "arrow.clockwise")
-                }
+private struct OptionalContextMenuModifier: ViewModifier {
+    let hasContextMenu: Bool
+    let song: APISong
 
-                Divider()
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if hasContextMenu {
+            content.contextMenu {
+                if DownloadManager.shared.isDownloaded(song.id) {
+                    Button {
+                        DownloadManager.shared.revealInFinder(song.id)
+                    } label: {
+                        Label("在访达中显示".localized, systemImage: "folder")
+                    }
 
-                Button(role: .destructive) {
-                    downloadManager.deleteDownload(song.id)
-                } label: {
-                    Label("删除已下载文件".localized, systemImage: "trash")
-                }
-            } else if downloadManager.isDownloading(song.id) {
-                Button {
-                    downloadManager.cancelDownload(song.id)
-                } label: {
-                    Label("取消下载".localized, systemImage: "xmark.circle")
-                }
-            } else {
-                Button {
-                    downloadManager.downloadSong(song)
-                } label: {
-                    Label("下载此歌曲".localized, systemImage: "arrow.down.circle")
+                    Button {
+                        DownloadManager.shared.deleteDownload(song.id)
+                        DownloadManager.shared.downloadSong(song)
+                    } label: {
+                        Label("重新下载".localized, systemImage: "arrow.clockwise")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        DownloadManager.shared.deleteDownload(song.id)
+                    } label: {
+                        Label("删除已下载文件".localized, systemImage: "trash")
+                    }
+                } else if DownloadManager.shared.isDownloading(song.id) {
+                    Button {
+                        DownloadManager.shared.cancelDownload(song.id)
+                    } label: {
+                        Label("取消下载".localized, systemImage: "xmark.circle")
+                    }
+                } else {
+                    Button {
+                        DownloadManager.shared.downloadSong(song)
+                    } label: {
+                        Label("下载此歌曲".localized, systemImage: "arrow.down.circle")
+                    }
                 }
             }
+        } else {
+            content
         }
     }
 }

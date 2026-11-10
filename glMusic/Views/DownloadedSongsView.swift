@@ -468,6 +468,7 @@ struct DownloadedSongsView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 6)
+        .frame(height: 48)
         .background(isHovered ? Color.primary.opacity(0.04) : .clear)
         .contentShape(Rectangle())
         .contextMenu {
@@ -501,25 +502,7 @@ struct DownloadedSongsView: View {
 
     @ViewBuilder
     private func coverImageView(for song: DownloadedSong) -> some View {
-        if let localCover = downloadManager.localCoverURL(for: song.id),
-           let nsImg = NSImage(contentsOf: localCover) {
-            Image(nsImage: nsImg)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-        } else if let urlStr = song.coverUrl, let url = URL(string: urlStr) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    Rectangle().fill(.quaternary)
-                        .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
-                }
-            }
-        } else {
-            Rectangle().fill(.quaternary)
-                .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
-        }
+        SongCoverThumbnailView(songId: song.id, coverUrl: song.coverUrl, size: 36)
     }
 
     private func playSong(_ song: DownloadedSong) {

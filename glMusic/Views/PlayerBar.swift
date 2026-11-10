@@ -114,32 +114,17 @@ struct PlayerBar: View {
                         player.isShowingLyrics.toggle()
                     }
                 } label: {
-                    Group {
-                        if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
-                           let img = NSImage(contentsOf: localURL) {
-                            Image(nsImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } else {
-                            AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                default:
-                                    Rectangle().fill(.quaternary)
-                                        .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
-                                }
-                            }
-                        }
-                    }
+                    SongCoverThumbnailView(song: song, size: 38)
+                        .frame(width: 38, height: 38)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(content: {
                         if isHovering {
                             Image(systemName: "arrow.down.left.and.arrow.up.right")
                                 .font(.system(size: 18))
+                                .foregroundStyle(.white)
+                                .shadow(radius: 2)
                         }
                     })
-                    .frame(width: 38, height: 38)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovering = h } }
                 .buttonStyle(.plain)

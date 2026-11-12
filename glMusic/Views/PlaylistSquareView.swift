@@ -206,9 +206,16 @@ struct PlaylistSquareView: View {
         VStack(spacing: 24) {
             LazyVGrid(columns: columns, spacing: 22) {
                 ForEach(filteredPlaylists) { pl in
-                    OfficialPlaylistCard(playlist: pl) {
-                        selection = "playlist_\(pl.id)"
-                    }
+                    OfficialPlaylistCard(
+                        playlist: pl,
+                        onSelect: {
+                            selection = "playlist_\(pl.id)"
+                        },
+                        onPlay: {
+                            playPlaylist(pl)
+                        }
+                    )
+                    .equatable()
                 }
             }
 
@@ -348,20 +355,41 @@ struct PlaylistSquareView: View {
 
         isLoadingMore = false
     }
+
+    private func playPlaylist(_ playlist: APIPlaylist) {
+        Task {
+            do {
+                let songs = try await NetworkManager.shared.playlistTracks(id: playlist.id, limit: 50)
+                if !songs.isEmpty {
+                    player.playAll(songs)
+                }
+            } catch {
+                print("加载歌单失败: \(error)")
+            }
+        }
+    }
 }
 
-// MARK: - Official Playlist Card
+// MARK: - Official Playlist Card (独立 Cell，遵循 Equatable 阻断无用重绘)
 
-struct OfficialPlaylistCard: View {
+struct OfficialPlaylistCard: View, Equatable {
     let playlist: APIPlaylist
     var onSelect: (() -> Void)? = nil
+    var onPlay: (() -> Void)? = nil
 
-    @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
     @State private var isHovering = false
     @State private var hoverDebounceTask: Task<Void, Never>?
     @State private var isPlayHovering = false
     @State private var isLoadingTracks = false
+
+    static func == (lhs: OfficialPlaylistCard, rhs: OfficialPlaylistCard) -> Bool {
+        lhs.playlist.id == rhs.playlist.id &&
+        lhs.playlist.name == rhs.playlist.name &&
+        lhs.playlist.displayCover == rhs.playlist.displayCover &&
+        lhs.playlist.playCount == rhs.playlist.playCount &&
+        lhs.playlist.creator?.nickname == rhs.playlist.creator?.nickname
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -461,7 +489,7 @@ struct OfficialPlaylistCard: View {
                 .allowsHitTesting(isHovering)
             }
             .scaleEffect(isHovering ? 1.02 : 1.0)
-            .shadow(color: .black.opacity(isHovering ? 0.20 : 0.08), radius: 6, y: 3)
+            .shadow(color: .black.opacity(isHovering ? 0.18 : 0.05), radius: isHovering ? 6 : 2, y: isHovering ? 3 : 1)
             .animation(.easeInOut(duration: 0.15), value: isHovering)
             .onHover { hovering in
                 hoverDebounceTask?.cancel()
@@ -512,15 +540,8 @@ struct OfficialPlaylistCard: View {
     private func loadAndPlay() {
         guard !isLoadingTracks else { return }
         isLoadingTracks = true
-        Task {
-            do {
-                let songs = try await NetworkManager.shared.playlistTracks(id: playlist.id, limit: 50)
-                if !songs.isEmpty {
-                    player.playAll(songs)
-                }
-            } catch {
-                print("加载歌单失败: \(error)")
-            }
+        onPlay?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             isLoadingTracks = false
         }
     }

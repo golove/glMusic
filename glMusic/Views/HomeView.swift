@@ -537,23 +537,15 @@ struct FeaturedBannerCard: View {
                 }
 
                 ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: URL(string: banner.imageUrl)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable()
-                                .aspectRatio(contentMode: .fill)
-                        default:
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(.quaternary)
-                                .overlay {
-                                    Image(systemName: "photo")
-                                        .font(.title)
-                                        .foregroundStyle(.tertiary)
-                                }
-                        }
-                    }
-                    .frame(width: 380, height: 180)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    CachedAsyncCoverView(
+                        urlString: banner.imageUrl,
+                        placeholderIcon: "photo",
+                        targetSize: 380,
+                        cornerRadius: 12,
+                        cancelOnDisappear: true,
+                        fixedSize: true,
+                        customHeight: 180
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(themeManager.accentColor, lineWidth: isFocused ? 2.5 : 0)

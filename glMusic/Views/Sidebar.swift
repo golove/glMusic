@@ -232,21 +232,14 @@ struct Sidebar: View {
         if let profile = userProfile {
             // 已登录：显示头像 + 昵称 + 网易云标签 + 退出按钮
             HStack(spacing: 8) {
-                AsyncImage(url: URL(string: profile.displayAvatar ?? profile.avatarUrl?.httpsURL ?? "")) { phase in
-                    switch phase {
-                    case .success(let img):
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    default:
-                        Circle().fill(.blue.gradient)
-                            .overlay(
-                                Text(String((profile.nickname ?? "U").prefix(1)))
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(.white)
-                            )
-                    }
-                }
-                .frame(width: 30, height: 30)
-                .clipShape(Circle())
+                CachedAsyncCoverView(
+                    urlString: profile.displayAvatar ?? profile.avatarUrl?.httpsURL,
+                    placeholderIcon: "person.crop.circle.fill",
+                    targetSize: 30,
+                    cornerRadius: 15,
+                    cancelOnDisappear: true,
+                    fixedSize: true
+                )
                 .overlay(
                     Circle().stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
                 )

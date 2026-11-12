@@ -239,22 +239,24 @@ final class PlayerManager {
         }
     }
 
-    /// 平滑无爆音切换至新音频项目 (包含 20ms 快速淡出旧音轨 + 静音切轨 + 35ms 优雅微淡入新音轨，彻底消灭波形截断爆音与电台杂音)
+    /// 平滑无爆音切换至新音频项目 (包含 25ms 快速平滑淡出旧音轨 + 纯绝对静音切轨 + 35ms 优雅微淡入新音轨，彻底消灭波形截断爆音与电台杂音)
     private func smoothlyTransitionToItem(_ item: AVPlayerItem, forSongId songId: Int) async {
         guard currentSong?.id == songId else { return }
 
         // 1. 若当前正在发声，在 20ms 内快速平滑降至 0 音量并暂停旧音频，彻底消灭波形突变产生的爆音/电台杂音
-        if player.timeControlStatus == .playing && player.volume > 0.05 {
+        if (player.timeControlStatus == .playing || player.rate > 0) && player.volume > 0.02 {
             let startVol = player.volume
-            let fadeOutSteps = 4
+            let fadeOutSteps = 5
             for step in 1...fadeOutSteps {
                 let factor = Float(fadeOutSteps - step) / Float(fadeOutSteps)
                 player.volume = startVol * factor
-                try? await Task.sleep(for: .milliseconds(5))
+                try? await Task.sleep(for: .milliseconds(4))
             }
-            player.volume = 0
-            player.pause()
         }
+
+        // 确保无论先前处于何种播放状态，切轨前必须保证处于 0 音量静音与暂停状态
+        player.volume = 0
+        player.pause()
 
         guard currentSong?.id == songId else { return }
 
@@ -262,7 +264,7 @@ final class PlayerManager {
         item.preferredForwardBufferDuration = 2.0
         item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
 
-        // 3. 静音状态下挂载新项目 (0 杂音、0 杂波冲击声卡 DAC)
+        // 3. 绝对静音状态下挂载新项目 (0 杂音、0 杂波冲击声卡 DAC)
         setupItemStatusObserver(for: item, songId: songId)
         player.replaceCurrentItem(with: item)
 
@@ -457,7 +459,9 @@ final class PlayerManager {
     }
 
     func invalidatePreload() {
-        cancelCrossfade()
+        if isCrossfading {
+            cancelCrossfade()
+        }
         preloadingTask?.cancel()
         preloadingTask = nil
         preloadedSongId = nil
@@ -541,8 +545,12 @@ final class PlayerManager {
 
     func addToPlaylist(_ song: APISong) {
         if !playlist.contains(where: { $0.id == song.id }) {
+            let wasEmptyOrSingle = playlist.count <= 1
             playlist.append(song)
-            invalidatePreload()
+            // 保护机制：若列表已有 >=2 首歌，追加至末尾绝不影响当前播放曲目与紧邻的下一首，无需中断预加载与淡变
+            if wasEmptyOrSingle {
+                invalidatePreload()
+            }
         }
     }
 
@@ -1122,6 +1130,7 @@ final class PlayerManager {
     }
 
     func cancelCrossfade() {
+        guard isCrossfading else { return } // 核心防线：未处于交叉渐变期，绝不触发任何破坏性操作与音量突变
         crossfadeTask?.cancel()
         crossfadeTask = nil
         crossfadingTargetSong = nil

@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v0.3.9-0071e3?style=flat-square" alt="Version" />
-  <img src="https://img.shields.io/badge/Platform-macOS%2014.0%2B-black?style=flat-square&logo=apple" alt="Platform" />
+  <img src="https://img.shields.io/badge/Release-v0.4.0-0071e3?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Platform-macOS%2015.0%2B-black?style=flat-square&logo=apple" alt="Platform" />
   <img src="https://img.shields.io/badge/Language-Swift%205%20%2F%206-F05138?style=flat-square&logo=swift" alt="Language" />
   <img src="https://img.shields.io/badge/Framework-SwiftUI%20%2F%20Observation-0071e3?style=flat-square" alt="Framework" />
   <img src="https://img.shields.io/badge/API-Native%20Swift%20SDK-brightgreen?style=flat-square" alt="API" />
@@ -196,6 +196,7 @@ glMusic/
 ├── UpdateManager.swift               # 可信自动更新管理器：Codesign 校验、原子备份回滚、下载替换
 ├── LanguageManager.swift             # 国际化语言管理器：简体/英文/繁体实时免重启无缝切换
 ├── AudioDeviceManager.swift          # CoreAudio 音频设备管理器：输出设备枚举与热切换
+├── PerformanceMetricsManager.swift   # MetricKit 系统级度量管理器：启动首帧耗时、主线程 Hangs 与滚动 Hitch 监控
 ├── StructModel.swift                 # 侧边栏导航定义与通用数据模型
 │
 ├── Network/
@@ -220,6 +221,7 @@ glMusic/
     ├── UpdateModalView.swift         # 新版本检测与升级提示弹窗
     ├── ThemePickerView.swift         # 主题选择弹出面板与网格卡片
     ├── NightBokehBackground.swift    # 城市夜景多层散景流光背景 (19个虚实景深光斑)
+    ├── AmbientMeshGradientView.swift # macOS 15 原生流光 MeshGradient 动态背景与自适应调色板提取
     ├── UnifiedSongRow.swift          # 全局通用单曲行组件 (序号/波形/封面/标题/喜欢/下载/右键菜单)
     ├── PlaybackActionBar.swift       # 全局播放操作栏 (播放全部/随机播放/下载全部)
     ├── DownloadButton.swift          # 全局三态动态下载按钮 (未下载/进度环/已下载)
@@ -245,8 +247,8 @@ glMusic/
 ## 🚀 快速上手与本地运行
 
 ### 环境要求
-- **macOS**：macOS 14.0 (Sonoma) 或更高版本 (全面支持 macOS 15 Sequoia)
-- **Xcode**：Xcode 15.0 或更高版本 (Swift 5.9 / Swift 6)
+- **macOS**：macOS 15.0 (Sequoia) 或更高版本 (全面支持 Apple Silicon 与 Intel 架构)
+- **Xcode**：Xcode 16.0 或更高版本 (Swift 5.10 / Swift 6)
 - **后端服务**：**无需配置任何外部服务**（内置 Swift 原生 SDK 直连网易云，彻底脱离 Node.js / Docker）
 
 ### 1. 克隆与打开项目

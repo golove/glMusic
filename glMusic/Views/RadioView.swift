@@ -306,23 +306,15 @@ struct RadioBannerCard: View {
                 }
 
                 ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: URL(string: banner.displayPic ?? banner.pic?.httpsURL ?? "")) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        case .empty:
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.primary.opacity(0.05))
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                        default:
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(.quaternary)
-                                .overlay(Image(systemName: "dot.radiowaves.left.and.right").font(.largeTitle).foregroundStyle(.tertiary))
-                        }
-                    }
+                    CachedAsyncCoverView(
+                        urlString: banner.displayPic ?? banner.pic?.httpsURL,
+                        placeholderIcon: "dot.radiowaves.left.and.right",
+                        targetSize: 380,
+                        cornerRadius: 12,
+                        cancelOnDisappear: true,
+                        fixedSize: true,
+                        customHeight: 180
+                    )
                     .frame(width: 380, height: 180)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
 
@@ -379,21 +371,18 @@ struct RadioStationCard: View {
                 Button {
                     onSelect?()
                 } label: {
-                    AsyncImage(url: URL(string: radio.displayCover ?? radio.picUrl ?? "")) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            Rectangle().fill(.quaternary)
-                                .overlay(Image(systemName: "dot.radiowaves.left.and.right").font(.title).foregroundStyle(.tertiary))
-                        }
-                    }
-                    .frame(width: 170, height: 170)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    CachedAsyncCoverView(
+                        urlString: radio.displayCover ?? radio.picUrl,
+                        placeholderIcon: "dot.radiowaves.left.and.right",
+                        targetSize: 170,
+                        cornerRadius: 10,
+                        cancelOnDisappear: true,
+                        fixedSize: true
+                    )
                 }
                 .buttonStyle(.plain)
                 .contentShape(RoundedRectangle(cornerRadius: 10))
-                .shadow(color: .black.opacity(isHovering ? 0.2 : 0.1), radius: isHovering ? 10 : 6, y: 4)
+                .shadow(color: .black.opacity(isHovering ? 0.2 : 0.06), radius: isHovering ? 8 : 2, y: isHovering ? 4 : 1)
                 .scaleEffect(isHovering ? 1.03 : 1.0)
 
                 // 悬停快捷播放按钮
@@ -479,15 +468,14 @@ struct RadioTopProgramRow: View {
 
             // 封面与播放悬停
             ZStack {
-                AsyncImage(url: URL(string: program.displayCover ?? program.coverUrl?.httpsURL ?? "")) { phase in
-                    if let img = phase.image {
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        RoundedRectangle(cornerRadius: 6).fill(.quaternary)
-                    }
-                }
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                CachedAsyncCoverView(
+                    urlString: program.displayCover ?? program.coverUrl?.httpsURL,
+                    placeholderIcon: "music.note",
+                    targetSize: 48,
+                    cornerRadius: 6,
+                    cancelOnDisappear: true,
+                    fixedSize: true
+                )
 
                 if isHovered || isPlaying {
                     RoundedRectangle(cornerRadius: 6)

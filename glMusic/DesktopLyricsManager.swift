@@ -48,6 +48,17 @@ final class DesktopLyricsPanel: NSPanel {
         super.layoutIfNeeded()
         isUpdatingConstraints = false
     }
+
+    // 保障 isMovableByWindowBackground 在 nonactivatingPanel + canBecomeKey=false 下正常工作：
+    // macOS 部分版本中，当 NSPanel 无法成为 key window 时，系统不会将 mouseDown 转发给
+    // 窗口移动引擎。显式重写 mouseDown 并调用 performDrag 确保拖拽始终可用。
+    override func mouseDown(with event: NSEvent) {
+        if isMovableByWindowBackground && !ignoresMouseEvents {
+            performDrag(with: event)
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
 }
 
 final class DesktopLyricsHostingView<Content: View>: NSHostingView<Content> {
@@ -65,6 +76,24 @@ final class DesktopLyricsHostingView<Content: View>: NSHostingView<Content> {
         isUpdating = true
         super.layout()
         isUpdating = false
+    }
+
+    // NSHostingView 默认会将 mouseDown 转发给 SwiftUI 手势系统，可能导致 panel 的
+    // isMovableByWindowBackground 拖拽被 SwiftUI 吞掉。在 SwiftUI 层不需要处理
+    // mouseDown（按钮已用 .buttonStyle(.plain) 处理点击）时，优先让 panel 处理拖拽。
+    override func mouseDown(with event: NSEvent) {
+        if let panel = window as? DesktopLyricsPanel,
+           panel.isMovableByWindowBackground && !panel.ignoresMouseEvents {
+            // 检查点击位置是否在按钮或交互控件上
+            let locationInView = convert(event.locationInWindow, from: nil)
+            let hitView = hitTest(locationInView)
+            // 如果点击到了 NSHostingView 自身或非交互子视图，转发给 panel 处理拖拽
+            if hitView === self || hitView == nil {
+                panel.performDrag(with: event)
+                return
+            }
+        }
+        super.mouseDown(with: event)
     }
 }
 

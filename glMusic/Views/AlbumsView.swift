@@ -9,6 +9,7 @@ import SwiftUI
 
 struct AlbumsView: View {
     @Binding var selection: String?
+    @Environment(PlayerManager.self) private var player
     @State private var albums: [APIAlbumDetail] = []
     @State private var isLoading = true
 
@@ -38,11 +39,19 @@ struct AlbumsView: View {
                     ProgressView("加载中...".localized)
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
+                    // 使用惰性网格容器，保障大数据量下视图按需创建
                     LazyVGrid(columns: columns, spacing: 24) {
                         ForEach(albums) { album in
-                            AlbumGridCard(album: album) {
-                                selection = "album_\(album.id)"
-                            }
+                            AlbumGridCard(
+                                album: album,
+                                onSelect: {
+                                    selection = "album_\(album.id)"
+                                },
+                                onPlay: {
+                                    playAlbum(album)
+                                }
+                            )
+                            .equatable() // 启用 Equatable 比较，阻断不必要的 body 重复求值
                         }
                     }
                     .padding(.horizontal, 24)
@@ -63,36 +72,64 @@ struct AlbumsView: View {
         }
         isLoading = false
     }
+
+    private func playAlbum(_ album: APIAlbumDetail) {
+        Task {
+            do {
+                let detail = try await NetworkManager.shared.albumDetail(id: album.id)
+                if let songs = detail.songs, !songs.isEmpty {
+                    player.playAll(songs)
+                }
+            } catch {
+                print("加载专辑失败: \(error)")
+            }
+        }
+    }
 }
 
-// MARK: - Album Grid Card
+// MARK: - Album Grid Card (独立轻量化 Cell，遵循 Equatable 隔绝外部重绘)
 
-struct AlbumGridCard: View {
+struct AlbumGridCard: View, Equatable {
     let album: APIAlbumDetail
     var onSelect: (() -> Void)? = nil
-    @Environment(PlayerManager.self) private var player
+    var onPlay: (() -> Void)? = nil
+
     @State private var isHovering = false
     @State private var isLoadingSongs = false
+
+    // MARK: - Equatable 实现 (只在关键元数据变动时刷新 body)
+    static func == (lhs: AlbumGridCard, rhs: AlbumGridCard) -> Bool {
+        lhs.album.id == rhs.album.id &&
+        lhs.album.name == rhs.album.name &&
+        lhs.album.coverUrl == rhs.album.coverUrl &&
+        lhs.album.picUrl == rhs.album.picUrl &&
+        lhs.album.artist?.name == rhs.album.artist?.name
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
-                AsyncImage(url: URL(string: album.coverUrl ?? album.picUrl ?? "")) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
-                    default: Rectangle().fill(.quaternary)
-                        .overlay(Image(systemName: "music.note").font(.title).foregroundStyle(.tertiary))
-                    }
-                }
-                .frame(width: 170, height: 170)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .shadow(color: .black.opacity(0.1), radius: 6, y: 3)
-                .scaleEffect(isHovering ? 1.03 : 1.0)
+                // 强制采用后台硬解与 Downsampling 的高性能缓存封面组件 (170x170 pt -> 340x340 Retina 像素)
+                CachedAsyncCoverView(
+                    urlString: album.coverUrl ?? album.picUrl,
+                    placeholderIcon: "music.note",
+                    targetSize: 170,
+                    cornerRadius: 10,
+                    cancelOnDisappear: true,
+                    fixedSize: true
+                )
+                // 常态使用极低开销轻量阴影，悬停时平滑增强，避免离屏多通道渲染损耗 GPU
+                .shadow(
+                    color: .black.opacity(isHovering ? 0.16 : 0.04),
+                    radius: isHovering ? 6 : 2,
+                    y: isHovering ? 3 : 1
+                )
+                .scaleEffect(isHovering ? 1.02 : 1.0)
 
-                // Hover Play Button
+                // 悬停播放快捷键
                 if isHovering {
                     Button {
-                        loadAndPlay()
+                        handlePlay()
                     } label: {
                         ZStack {
                             if isLoadingSongs {
@@ -105,24 +142,25 @@ struct AlbumGridCard: View {
                                     .font(.system(size: 36))
                                     .symbolRenderingMode(.palette)
                                     .foregroundStyle(.white, .black.opacity(0.5))
-                                    .shadow(radius: 4)
+                                    .shadow(radius: 2)
                             }
                         }
                     }
                     .buttonStyle(.plain)
                     .padding(8)
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    .transition(.opacity)
                 }
             }
-            .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovering = h } }
-            .onTapGesture {
-                if let onSelect = onSelect {
-                    onSelect()
-                } else {
-                    loadAndPlay()
+            .onHover { h in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHovering = h
                 }
+            }
+            .onTapGesture {
+                onSelect?()
             }
 
+            // 固定文字布局与单行截断，防止文本测量抖动
             VStack(alignment: .leading, spacing: 2) {
                 Text(album.name)
                     .font(.system(size: 13, weight: .medium))
@@ -134,28 +172,17 @@ struct AlbumGridCard: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                if let onSelect = onSelect {
-                    onSelect()
-                } else {
-                    loadAndPlay()
-                }
+                onSelect?()
             }
         }
         .frame(width: 170)
     }
 
-    private func loadAndPlay() {
+    private func handlePlay() {
         guard !isLoadingSongs else { return }
         isLoadingSongs = true
-        Task {
-            do {
-                let detail = try await NetworkManager.shared.albumDetail(id: album.id)
-                if let songs = detail.songs, !songs.isEmpty {
-                    player.playAll(songs)
-                }
-            } catch {
-                print("加载专辑失败: \(error)")
-            }
+        onPlay?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             isLoadingSongs = false
         }
     }

@@ -43,6 +43,7 @@ struct ArtistsView: View {
                             APIArtistRow(artist: artist) {
                                 selection = "artist_\(artist.id)"
                             }
+                            .equatable()
                         }
                     }
                 }
@@ -64,29 +65,30 @@ struct ArtistsView: View {
     }
 }
 
-// MARK: - Artist Row
+// MARK: - Artist Row (独立轻量化 Cell，遵循 Equatable 隔绝外部重绘)
 
-struct APIArtistRow: View {
+struct APIArtistRow: View, Equatable {
     let artist: APIArtistDetail
     var onSelect: (() -> Void)? = nil
     @State private var isHovered = false
 
+    static func == (lhs: APIArtistRow, rhs: APIArtistRow) -> Bool {
+        lhs.artist.id == rhs.artist.id &&
+        lhs.artist.name == rhs.artist.name &&
+        lhs.artist.avatarUrl == rhs.artist.avatarUrl &&
+        lhs.artist.albumSize == rhs.artist.albumSize
+    }
+
     var body: some View {
         HStack(spacing: 14) {
-            AsyncImage(url: URL(string: artist.avatarUrl ?? "")) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().aspectRatio(contentMode: .fill)
-                case .failure:
-                    Circle().fill(.quaternary)
-                        .overlay(Text(String(artist.name.prefix(1))).font(.headline).foregroundStyle(.secondary))
-                default:
-                    Circle().fill(.quaternary)
-                        .overlay(ProgressView().controlSize(.mini))
-                }
-            }
-            .frame(width: 48, height: 48)
-            .clipShape(Circle())
+            CachedAsyncCoverView(
+                urlString: artist.avatarUrl,
+                placeholderIcon: "person.fill",
+                targetSize: 48,
+                cornerRadius: 24,
+                cancelOnDisappear: true,
+                fixedSize: true
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(artist.name)

@@ -55,39 +55,16 @@ struct LyricsView: View {
     }
 }
 
-// MARK: - Isolated Blurred Artwork Background (单次按歌曲渲染，杜绝刷新与父级拉伸)
+// MARK: - Isolated Ambient Mesh Gradient Artwork Background (macOS 15 原生流光流动网格)
 
 private struct LyricsBackgroundArtwork: View {
     @Environment(PlayerManager.self) private var player
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                Color.black
-
-                if let blurred = player.currentBlurredArtwork {
-                    Image(nsImage: blurred)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
-                        .scaleEffect(1.08)
-                        .opacity(0.48)
-                }
-
-                // Apple Music 沉浸式暗角渐变蒙版 (顶部压暗保护顶栏标题与返回按钮，底部压暗保护歌词)
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.55),
-                        Color.black.opacity(0.25),
-                        Color.black.opacity(0.65)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-        }
-        .ignoresSafeArea()
+        AmbientMeshGradientView(
+            artwork: player.currentBlurredArtwork,
+            songId: player.currentSong?.id ?? 0
+        )
     }
 }
 
@@ -212,21 +189,14 @@ private struct LyricsLeftArtSection: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     } else {
-                        AsyncImage(url: URL(string: song.coverUrl ?? "")) { phase in
-                            switch phase {
-                            case .success(let img):
-                                img.resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            default:
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(.white.opacity(0.1))
-                                    .overlay(
-                                        Image(systemName: "music.note")
-                                            .font(.system(size: 44))
-                                            .foregroundStyle(.white.opacity(0.4))
-                                    )
-                            }
-                        }
+                        CachedAsyncCoverView(
+                            urlString: song.coverUrl,
+                            placeholderIcon: "music.note",
+                            targetSize: coverSize + 20,
+                            cornerRadius: 18,
+                            cancelOnDisappear: false,
+                            fixedSize: true
+                        )
                     }
                 }
                 .background(Color.clear)
@@ -389,8 +359,7 @@ private struct LyricsScrollAreaView: View {
                             .frame(maxWidth: .infinity, alignment: styleManager.alignment.frameAlignment)
                             .padding(.vertical, 40)
                         } else {
-                            ForEach(0..<player.lyrics.count, id: \.self) { index in
-                                let line = player.lyrics[index]
+                            ForEach(Array(player.lyrics.enumerated()), id: \.element.id) { index, line in
                                 let isActive = index == player.currentLyricIndex
 
                                 LyricLineRowView(

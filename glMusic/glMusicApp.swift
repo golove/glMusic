@@ -33,6 +33,7 @@ struct glMusicApp: App {
     init() {
         ThinScrollerConfigurator.shared.configureIfNeeded()
         setupURLCache()
+        PerformanceMetricsManager.shared.startMonitoring()
     }
 
     private func setupURLCache() {

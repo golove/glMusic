@@ -69,6 +69,7 @@ struct ArtistDetailView: View {
                                     AlbumGridCard(album: alb) {
                                         selection = "album_\(alb.id)"
                                     }
+                                    .equatable() // 启用 Equatable 比较，阻断不必要的 body 重复求值
                                 }
                             }
                             .padding(.horizontal, 24)
@@ -135,22 +136,15 @@ struct ArtistDetailView: View {
         VStack(alignment:.leading){
          
             HStack(spacing: 24) {
-                // Avatar
-                AsyncImage(url: URL(string: artist?.avatarUrl ?? artist?.coverUrl ?? "")) { phase in
-                    switch phase {
-                    case .success(let img):
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    case .failure:
-                        RoundedRectangle(cornerRadius: 12).fill(.quaternary)
-                            .overlay(Image(systemName: "music.mic").font(.largeTitle).foregroundStyle(.tertiary))
-                    default:
-                        RoundedRectangle(cornerRadius: 12).fill(.quaternary)
-                            .overlay(ProgressView())
-                    }
-                }
-                .frame(width: 160, height: 160)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                
+                // Avatar (Downsampling + 后台硬解 + 磁盘二级缓存)
+                CachedAsyncCoverView(
+                    urlString: artist?.avatarUrl ?? artist?.coverUrl,
+                    placeholderIcon: "music.mic",
+                    targetSize: 160,
+                    cornerRadius: 12,
+                    cancelOnDisappear: true,
+                    fixedSize: true
+                )
                 .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
 
                 // Info

@@ -137,19 +137,16 @@ struct AlbumDetailView: View {
 
     private var headerSection: some View {
         HStack(alignment: .top, spacing: 24) {
-            // Album Art
-            AsyncImage(url: URL(string: album?.coverUrl ?? album?.picUrl ?? "")) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    Rectangle().fill(.quaternary)
-                        .overlay(Image(systemName: "square.stack").font(.largeTitle).foregroundStyle(.tertiary))
-                }
-            }
+            // Album Art (180x180 pt, Retina 360x360 px 下采样与后台硬解)
+            CachedAsyncCoverView(
+                urlString: album?.coverUrl ?? album?.picUrl,
+                placeholderIcon: "square.stack",
+                targetSize: 180,
+                cornerRadius: 12,
+                cancelOnDisappear: true
+            )
             .frame(width: 180, height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+            .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
 
             // Info
             VStack(alignment: .leading, spacing: 6) {

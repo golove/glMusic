@@ -151,18 +151,14 @@ struct RadioDetailView: View {
     private var headerSection: some View {
         HStack(alignment: .top, spacing: 20) {
             // 电台封面
-            AsyncImage(url: URL(string: radio?.displayCover ?? radio?.picUrl ?? "")) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.quaternary)
-                        .overlay(Image(systemName: "dot.radiowaves.left.and.right").font(.largeTitle).foregroundStyle(.tertiary))
-                }
-            }
-            .frame(width: 140, height: 140)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            CachedAsyncCoverView(
+                urlString: radio?.displayCover ?? radio?.picUrl,
+                placeholderIcon: "dot.radiowaves.left.and.right",
+                targetSize: 140,
+                cornerRadius: 12,
+                cancelOnDisappear: true,
+                fixedSize: true
+            )
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
 
             // 电台元信息
@@ -183,16 +179,15 @@ struct RadioDetailView: View {
                 // 主播与订阅量
                 HStack(spacing: 8) {
                     if let dj = radio?.dj {
-                        if let avatar = dj.displayAvatar ?? dj.avatarUrl, let aURL = URL(string: avatar) {
-                            AsyncImage(url: aURL) { phase in
-                                if let img = phase.image {
-                                    img.resizable().aspectRatio(contentMode: .fill)
-                                } else {
-                                    Circle().fill(.secondary.opacity(0.3))
-                                }
-                            }
-                            .frame(width: 18, height: 18)
-                            .clipShape(Circle())
+                        if let avatar = dj.displayAvatar ?? dj.avatarUrl {
+                            CachedAsyncCoverView(
+                                urlString: avatar,
+                                placeholderIcon: "person.fill",
+                                targetSize: 18,
+                                cornerRadius: 9,
+                                cancelOnDisappear: true,
+                                fixedSize: true
+                            )
                         }
                         Text(dj.nickname ?? "主播".localized)
                             .font(.system(size: 12, weight: .medium))
@@ -285,16 +280,14 @@ struct RadioProgramRow: View {
 
             // 节目封面与名称
             HStack(spacing: 12) {
-                AsyncImage(url: URL(string: program.displayCover ?? program.coverUrl?.httpsURL ?? "")) { phase in
-                    if let img = phase.image {
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(.quaternary)
-                    }
-                }
-                .frame(width: 38, height: 38)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                CachedAsyncCoverView(
+                    urlString: program.displayCover ?? program.coverUrl?.httpsURL,
+                    placeholderIcon: "music.note",
+                    targetSize: 38,
+                    cornerRadius: 6,
+                    cancelOnDisappear: true,
+                    fixedSize: true
+                )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(program.name)

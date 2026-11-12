@@ -223,7 +223,10 @@ final class NetworkManager: @unchecked Sendable {
         }
     }
 
-    var isLoggedIn: Bool { cookie != nil && !cookie!.isEmpty }
+    var isLoggedIn: Bool {
+        guard let c = cookie else { return false }
+        return !c.isEmpty
+    }
 
     func logout() {
         cookie = nil

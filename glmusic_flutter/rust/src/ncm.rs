@@ -95,7 +95,14 @@ impl NcmService {
         Ok(resp.body)
     }
 
-    pub async fn song_url(&self, id: i64, level: &str) -> Result<Value, String> {
+    pub async fn song_url(
+        &self,
+        id: i64,
+        level: &str,
+        name_hint: Option<&str>,
+        artist_hint: Option<&str>,
+        duration_hint: Option<i64>,
+    ) -> Result<Value, String> {
         let client = self.client.read().await;
         let ids_param = format!("[{}]", id);
         let query = Query::new()
@@ -125,9 +132,41 @@ impl NcmService {
             }
         }
 
-        // Smart unblock fallback if trial or empty
+        // Smart unblock fallback for VIP / trial / grey songs
         if final_url.is_none() {
-            if let Some(unblocked) = match_unblock_url(&self.http, id, "320").await {
+            let mut title = name_hint.unwrap_or("").to_string();
+            let mut artist = artist_hint.unwrap_or("").to_string();
+            let mut dur_sec = duration_hint.unwrap_or(0);
+
+            // If metadata is incomplete, query song detail to get full metadata for accurate unblock matching
+            if title.is_empty() || artist.is_empty() || dur_sec == 0 {
+                let id_str = id.to_string();
+                let q_detail = Query::new().param("ids", &id_str);
+                if let Ok(detail_resp) = client.song_detail(&q_detail).await {
+                    if let Some(songs) = detail_resp.body.get("songs").and_then(|s| s.as_array()) {
+                        if let Some(first_song) = songs.first() {
+                            if title.is_empty() {
+                                if let Some(n) = first_song.get("name").and_then(|v| v.as_str()) {
+                                    title = n.to_string();
+                                }
+                            }
+                            if artist.is_empty() {
+                                if let Some(ars) = first_song.get("ar").and_then(|a| a.as_array()) {
+                                    let art_names: Vec<&str> = ars.iter().filter_map(|a| a.get("name").and_then(|v| v.as_str())).collect();
+                                    artist = art_names.join(" / ");
+                                }
+                            }
+                            if dur_sec == 0 {
+                                if let Some(dt) = first_song.get("dt").and_then(|v| v.as_i64()) {
+                                    dur_sec = dt / 1000;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(unblocked) = match_unblock_url(&self.http, id, &title, &artist, dur_sec, "320").await {
                 final_url = Some(unblocked);
             }
         }

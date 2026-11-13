@@ -94,9 +94,43 @@ impl NcmService {
         Ok(resp.body)
     }
 
-    pub async fn song_url(&self, id: i64, level: &str) -> Result<Value, String> {
+    pub async fn song_url(&self, id: i64, level: &str, name_opt: Option<&str>, artist_opt: Option<&str>, duration_sec_opt: Option<i64>) -> Result<Value, String> {
         let client = self.client.read().await;
         let ids_param = format!("[{}]", id);
+
+        // Fetch song details if name or artist missing
+        let mut title = name_opt.unwrap_or("").to_string();
+        let mut artist = artist_opt.unwrap_or("").to_string();
+        let mut dur_sec = duration_sec_opt.unwrap_or(0);
+
+        if title.is_empty() || artist.is_empty() || dur_sec == 0 {
+            let detail_query = Query::new().param("ids", &id.to_string());
+            if let Ok(detail_resp) = client.song_detail(&detail_query).await {
+                if let Some(songs) = detail_resp.body.get("songs").and_then(|s| s.as_array()) {
+                    if let Some(song) = songs.first() {
+                        if title.is_empty() {
+                            if let Some(n) = song.get("name").and_then(|n| n.as_str()) {
+                                title = n.to_string();
+                            }
+                        }
+                        if artist.is_empty() {
+                            if let Some(ar_arr) = song.get("ar").and_then(|a| a.as_array()) {
+                                let names: Vec<&str> = ar_arr.iter().filter_map(|a| a.get("name").and_then(|n| n.as_str())).collect();
+                                if !names.is_empty() {
+                                    artist = names.join("/");
+                                }
+                            }
+                        }
+                        if dur_sec == 0 {
+                            if let Some(dt_ms) = song.get("dt").and_then(|d| d.as_i64()) {
+                                dur_sec = dt_ms / 1000;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let query = Query::new()
             .param("ids", &ids_param)
             .param("level", level);
@@ -126,7 +160,7 @@ impl NcmService {
 
         // Smart unblock fallback if trial or empty
         if final_url.is_none() {
-            if let Some(unblocked) = match_unblock_url(&self.http, id, "320").await {
+            if let Some(unblocked) = match_unblock_url(&self.http, id, &title, &artist, dur_sec, "320").await {
                 final_url = Some(unblocked);
             }
         }

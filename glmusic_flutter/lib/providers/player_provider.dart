@@ -162,7 +162,13 @@ class PlayerProvider extends ChangeNotifier {
     if (_preloadedUrls.containsKey(nextSong.id) || _preloadingSongId == nextSong.id) return;
 
     _preloadingSongId = nextSong.id;
-    _core.getSongUrl(nextSong.id, level: _soundQuality.code).then((url) {
+    _core.getSongUrl(
+      nextSong.id,
+      level: _soundQuality.code,
+      name: nextSong.name,
+      artist: nextSong.artistText,
+      duration: nextSong.duration ~/ 1000,
+    ).then((url) {
       if (url != null && url.isNotEmpty) {
         _preloadedUrls[nextSong.id] = url;
       }
@@ -239,7 +245,13 @@ class PlayerProvider extends ChangeNotifier {
         url = _preloadedUrls.remove(song.id);
       }
       if (url == null || url.isEmpty) {
-        url = await _core.getSongUrl(song.id, level: _soundQuality.code);
+        url = await _core.getSongUrl(
+          song.id,
+          level: _soundQuality.code,
+          name: song.name,
+          artist: song.artistText,
+          duration: song.duration ~/ 1000,
+        );
       }
 
       if (url != null && url.isNotEmpty) {

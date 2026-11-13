@@ -39,6 +39,9 @@ struct IdsQuery {
 struct SongUrlQuery {
     id: i64,
     level: Option<String>,
+    name: Option<String>,
+    artist: Option<String>,
+    duration: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -186,7 +189,7 @@ async fn handle_song_url(
     Query(q): Query<SongUrlQuery>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
     let lvl = q.level.unwrap_or_else(|| "exhigh".to_string());
-    ncm.song_url(q.id, &lvl).await
+    ncm.song_url(q.id, &lvl, q.name.as_deref(), q.artist.as_deref(), q.duration).await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }

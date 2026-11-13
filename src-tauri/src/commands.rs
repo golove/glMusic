@@ -31,9 +31,12 @@ pub async fn ncm_song_url(
     state: State<'_, NcmService>,
     id: i64,
     level: Option<String>,
+    name: Option<String>,
+    artist: Option<String>,
+    duration: Option<i64>,
 ) -> Result<Value, String> {
     let lvl = level.unwrap_or_else(|| "exhigh".to_string());
-    state.song_url(id, &lvl).await
+    state.song_url(id, &lvl, name.as_deref(), artist.as_deref(), duration).await
 }
 
 #[tauri::command]

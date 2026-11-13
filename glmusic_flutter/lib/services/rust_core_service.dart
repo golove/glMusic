@@ -261,15 +261,25 @@ class RustCoreService {
   }
 
   // Song Playback URL
-  Future<String?> getSongUrl(int id, {String level = 'exhigh'}) async {
+  Future<String?> getSongUrl(
+    int id, {
+    String level = 'exhigh',
+    String? name,
+    String? artist,
+    int? duration,
+  }) async {
     try {
-      final json = await _get('/song/url', {'id': id, 'level': level});
+      final params = <String, dynamic>{'id': id, 'level': level};
+      if (name != null && name.isNotEmpty) params['name'] = name;
+      if (artist != null && artist.isNotEmpty) params['artist'] = artist;
+      if (duration != null && duration > 0) params['duration'] = duration;
+
+      final json = await _get('/song/url', params);
       final data = (json['data'] ?? []) as List<dynamic>;
       if (data.isNotEmpty) {
         final url = data[0]['url'] as String?;
         if (url != null && url.isNotEmpty) {
-          // Force https for netease cdn if needed
-          return url.startsWith('http://') ? url.replaceFirst('http://', 'https://') : url;
+          return url;
         }
       }
       return null;

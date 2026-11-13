@@ -102,6 +102,7 @@ final class PlayerManager {
     private var preloadedItem: AVPlayerItem?
     private var preloadedLyrics: [LyricLine]?
     private var preloadingTask: Task<Void, Never>?
+    private var preloadRequestId = UUID()
     private var failureConsecutiveCount: Int = 0
 
     // MARK: - Computed
@@ -398,13 +399,15 @@ final class PlayerManager {
         guard let nextSong = getNextSong(), nextSong.id != currentSong?.id else { return }
         if preloadedSongId == nextSong.id || preloadingTask != nil { return }
 
+        let requestId = UUID()
+        preloadRequestId = requestId
         preloadingTask = Task { [weak self] in
             guard let self = self else { return }
-            await self.preloadSong(nextSong)
+            await self.preloadSong(nextSong, requestId: requestId)
         }
     }
 
-    private func preloadSong(_ song: APISong) async {
+    private func preloadSong(_ song: APISong, requestId: UUID) async {
         var targetItem: AVPlayerItem? = nil
 
         // 预取音频直链（依次检查：离线下载 -> 本地流媒体磁盘缓存 -> 异步直链解析）
@@ -443,11 +446,16 @@ final class PlayerManager {
         }
 
         guard let item = targetItem else {
-            self.preloadingTask = nil
+            if self.preloadRequestId == requestId {
+                self.preloadingTask = nil
+            }
             return
         }
 
-        if self.currentSong?.id != song.id {
+        if !Task.isCancelled,
+           self.preloadRequestId == requestId,
+           self.getNextSong()?.id == song.id,
+           self.currentSong?.id != song.id {
             self.preloadedSongId = song.id
             self.preloadedItem = item
             self.preloadedLyrics = targetLyrics
@@ -455,13 +463,16 @@ final class PlayerManager {
             print("⚡️ [glMusic] 下一首音频与歌词预加载就绪: 《\(song.name)》 (ID: \(song.id))")
             #endif
         }
-        self.preloadingTask = nil
+        if self.preloadRequestId == requestId {
+            self.preloadingTask = nil
+        }
     }
 
     func invalidatePreload() {
         if isCrossfading {
             cancelCrossfade()
         }
+        preloadRequestId = UUID()
         preloadingTask?.cancel()
         preloadingTask = nil
         preloadedSongId = nil

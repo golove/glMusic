@@ -478,26 +478,25 @@ final class UpdateManager {
 
         // 3. 执行 codesign 校验 (如果安装包包含代码签名，必须保证签名未受损)
         let codesign = Process()
+        let pipe = Pipe()
         codesign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
         codesign.arguments = ["--verify", "--deep", "--strict", url.path]
+        codesign.standardError = pipe
         try? codesign.run()
         codesign.waitUntilExit()
 
         if codesign.terminationStatus != 0 {
             // 检查是否是由于完全未签名 (ad-hoc / 开源构建)，还是签名被篡改破坏
-            let checkSign = Process()
-            let pipe = Pipe()
-            checkSign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-            checkSign.arguments = ["-d", url.path]
-            checkSign.standardError = pipe
-            try? checkSign.run()
-            checkSign.waitUntilExit()
             let errOutput = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            if !errOutput.contains("code object is not signed at all") && checkSign.terminationStatus == 0 {
-                // 原包原本是有签名的，但 --verify 失败了，说明包被篡改或损坏
-                print("❌ 升级包代码签名校验受损: \(errOutput)")
-                return false
+            if errOutput.contains("code object is not signed at all") {
+                // 完全未签名的开源构建放行
+                print("ℹ️ 升级包未包含代码签名 (开源构建)，放行安装")
+                return true
             }
+
+            // 原包原本是有签名的，但 --verify 失败了，说明包被篡改或损坏
+            print("❌ 升级包代码签名校验受损: \(errOutput)")
+            return false
         }
 
         return true

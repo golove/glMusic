@@ -49,6 +49,11 @@ jobs:
           STAGE="$DIST/dmg-stage"
 
           test -d "$APP_PATH"
+
+          # 自动进行 macOS Ad-hoc 自签名，赋予完整的结构性有效签名
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+
           mkdir -p "$DIST" "$STAGE"
 
           ditto -c -k --sequesterRsrc --keepParent \

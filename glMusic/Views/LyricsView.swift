@@ -22,28 +22,30 @@ struct LyricsView: View {
             // Blurred Artwork Background (严格贴合窗口大小，防止图片撑大窗口)
             LyricsBackgroundArtwork()
 
-            // Main Content: 左侧专辑封面与播放控制 + 右侧滚动歌词 (保持原位布局)
+            // Main Content: 居中流体双栏布局 (实时平滑自适应任意窗口拉伸缩放，窗口变大封面相应等比例放大)
             GeometryReader { geometry in
                 let availableWidth = geometry.size.width
                 let availableHeight = geometry.size.height
 
-                // 根据窗口宽度和高度动态计算封面大小
-                let coverSize = min(
-                    availableWidth * 0.28,
-                    max(180, availableHeight * 0.45),
-                    320
-                )
+                // 封面尺寸自适应：窗口变大时封面相应放大 (平滑在 260pt ~ 520pt 间线性延展，同时兼顾高度与宽度黄金比例)
+                let maxFromHeight = max(240, availableHeight * 0.46 - 20)
+                let maxFromWidth = max(240, availableWidth * 0.30)
+                let coverSize: CGFloat = min(max(260, min(maxFromHeight, maxFromWidth)), 520)
 
-                HStack(alignment: .top, spacing: 24) {
+                // 右侧歌词栏宽度：保证适宜的排版阅读舒适度，同时自适应窗口宽度平滑延展 (460 ~ 720pt)
+                let rightColumnWidth: CGFloat = min(max(460, availableWidth * 0.38), 720)
+
+                // 左右两栏自适应间距 (平滑连续线性过渡 48 ~ 88pt)
+                let columnSpacing: CGFloat = min(max(48, availableWidth * 0.05), 88)
+
+                HStack(alignment: .center, spacing: columnSpacing) {
                     LyricsLeftArtSection(selection: $selection, coverSize: coverSize)
+                        .frame(width: coverSize, height: availableHeight, alignment: .center)
 
                     LyricsScrollAreaView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(width: rightColumnWidth, height: availableHeight)
                 }
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity
-                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -62,7 +64,7 @@ private struct LyricsBackgroundArtwork: View {
 
     var body: some View {
         AmbientMeshGradientView(
-            artwork: player.currentBlurredArtwork,
+            artwork: player.currentArtwork ?? player.currentBlurredArtwork,
             songId: player.currentSong?.id ?? 0
         )
     }
@@ -180,8 +182,13 @@ private struct LyricsLeftArtSection: View {
     let coverSize: CGFloat
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             if let song = player.currentSong {
+                // 1. 专辑封面 (自适应高保真圆角与阴影，随窗口尺寸平滑等比缩放)
+                let coverRadius = min(28, max(16, coverSize * 0.055))
+                let shadowRadius = min(32, max(18, coverSize * 0.065))
+                let shadowY = min(16, max(8, coverSize * 0.035))
+
                 Group {
                     if let localURL = DownloadManager.shared.localCoverURL(for: song.id),
                        let img = NSImage(contentsOf: localURL) {
@@ -192,33 +199,51 @@ private struct LyricsLeftArtSection: View {
                         CachedAsyncCoverView(
                             urlString: song.coverUrl,
                             placeholderIcon: "music.note",
-                            targetSize: coverSize + 20,
-                            cornerRadius: 18,
+                            targetSize: coverSize,
+                            cornerRadius: coverRadius,
                             cancelOnDisappear: false,
                             fixedSize: true
                         )
                     }
                 }
                 .background(Color.clear)
-                .frame(width: coverSize + 20, height: coverSize + 20)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
-                .padding(.top, -120)
+                .frame(width: coverSize, height: coverSize)
+                .clipShape(RoundedRectangle(cornerRadius: coverRadius))
+                .shadow(color: .black.opacity(0.40), radius: shadowRadius, y: shadowY)
 
-                // 歌曲信息
-                VStack(alignment: .leading, spacing: 3) {
+                // 2. 歌曲信息 (标题、艺术家、专辑) - 严格与封面等宽对齐，随封面等比自适应放缩
+                let titleFontSize: CGFloat = min(max(20, coverSize * 0.065), 28)
+                let artistFontSize: CGFloat = min(max(13, coverSize * 0.038), 16)
+                let albumFontSize: CGFloat = min(max(11, coverSize * 0.032), 14)
+                let heartIconSize: CGFloat = min(max(18, coverSize * 0.055), 24)
+
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .center, spacing: 8) {
                         Text(song.name)
-                            .font(.system(size: 24, weight: .medium))
+                            .font(.system(size: titleFontSize, weight: .bold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                         Spacer()
+
+                        if player.isPersonalFM {
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    player.trashCurrentFMSong()
+                                }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: heartIconSize * 0.9))
+                                    .foregroundStyle(.white.opacity(0.65))
+                            }
+                            .buttonStyle(.plain)
+                            .help("不喜欢并从私人 FM 移除（不再推荐）".localized)
+                        }
 
                         Button {
                             player.toggleLike(for: song)
                         } label: {
                             Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
-                                .font(.system(size: 22))
+                                .font(.system(size: heartIconSize))
                                 .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .white.opacity(0.6))
                         }
                         .buttonStyle(.plain)
@@ -227,9 +252,9 @@ private struct LyricsLeftArtSection: View {
                     ArtistLinksView(
                         artists: song.ar,
                         fallbackText: song.displayArtist,
-                        fontSize: 13,
+                        fontSize: artistFontSize,
                         weight: .medium,
-                        normalColor: .white.opacity(0.8),
+                        normalColor: .white.opacity(0.85),
                         hoverColor: .white,
                         separatorColor: .white.opacity(0.5)
                     ) { artistId in
@@ -240,9 +265,9 @@ private struct LyricsLeftArtSection: View {
                         if let albumId = song.al?.id, albumId > 0 {
                             ArtistClickableLabel(
                                 name: song.displayAlbum,
-                                fontSize: 11,
+                                fontSize: albumFontSize,
                                 weight: .regular,
-                                normalColor: .white.opacity(0.5),
+                                normalColor: .white.opacity(0.55),
                                 hoverColor: .white.opacity(0.9)
                             ) {
                                 withAnimation(.easeInOut(duration: 0.25)) {
@@ -254,61 +279,124 @@ private struct LyricsLeftArtSection: View {
                             }
                         } else {
                             Text(song.displayAlbum)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.white.opacity(0.5))
+                                .font(.system(size: albumFontSize))
+                                .foregroundStyle(.white.opacity(0.55))
                                 .lineLimit(1)
                         }
                     }
                 }
-                .frame(width: coverSize + 80, alignment: .leading)
-                .padding(.top, 20)
+                .frame(width: coverSize, alignment: .leading)
+                .padding(.top, 4)
 
-                // 进度条控制 (独立隔离渲染，避免每 100ms 重绘左侧封面与歌曲元数据)
-                LyricsProgressSection()
-                    .frame(width: coverSize + 80)
+                // 2.5 发烧级音质与 Hi-Res 专属徽标 及 心动模式
+                HStack(spacing: 8) {
+                    AudioQualityBadgeView(compact: false)
 
-                HStack(spacing: (coverSize - 90) / 4) {
-                    Button { player.toggleShuffle() } label: {
-                        Image(systemName: "shuffle")
-                            .font(.system(size: 18))
-                            .foregroundStyle(player.isShuffled ? themeManager.accentColor : .secondary)
+                    if player.isPersonalFM {
+                        Text("私人 FM".localized)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(themeManager.accentColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(themeManager.accentColor.opacity(0.18), in: Capsule())
+                    }
+
+                    Spacer()
+
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            player.toggleInfiniteRoaming()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            HeartbeatModeIcon(isActive: player.isInfiniteRoamingEnabled, size: 12)
+                            Text("心动模式".localized)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(player.isInfiniteRoamingEnabled ? themeManager.accentColor : .white.opacity(0.65))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.ultraThinMaterial, in: Capsule())
                     }
                     .buttonStyle(.plain)
-
-                    Button { player.previous() } label: {
-                        Image(systemName: "backward.fill")
-                            .font(.system(size: 30))
-                            .foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { player.togglePlay() } label: {
-                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { player.next() } label: {
-                        Image(systemName: "forward.fill")
-                            .font(.system(size: 30))
-                            .foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { player.cycleRepeat() } label: {
-                        Image(systemName: player.repeatMode.systemImage)
-                            .font(.system(size: 18))
-                            .foregroundStyle(player.repeatMode.isActive ? themeManager.accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
+                    .help(player.isInfiniteRoamingEnabled ? "心动模式 / 无限漫游已开启 (播完后自动接入相似歌曲流)".localized : "开启心动模式 / 相似歌曲无限漫游".localized)
                 }
+                .frame(width: coverSize, alignment: .leading)
+                .padding(.top, 2)
+
+                // 3. 进度条控制 (与封面等宽对齐)
+                LyricsProgressSection()
+                    .frame(width: coverSize)
+                    .padding(.top, 2)
+
+                // 4. 播放控制按键 (均匀分布在封面宽度内，随封面尺寸自适应微放)
+                let controlSmallSize: CGFloat = min(max(16, coverSize * 0.046), 21)
+                let controlMedSize: CGFloat = min(max(24, coverSize * 0.070), 32)
+                let controlPlaySize: CGFloat = min(max(34, coverSize * 0.096), 44)
+
+                HStack {
+                    AppleMusicPlaybackButton(
+                        systemName: "shuffle",
+                        fontSize: controlSmallSize,
+                        foregroundStyle: player.isShuffled ? themeManager.accentColor : .white.opacity(0.65),
+                        direction: .center
+                    ) {
+                        player.toggleShuffle()
+                    }
+
+                    Spacer()
+
+                    AppleMusicPlaybackButton(
+                        systemName: "backward.fill",
+                        fontSize: controlMedSize,
+                        foregroundStyle: .white,
+                        direction: .backward
+                    ) {
+                        player.previous()
+                    }
+
+                    Spacer()
+
+                    AppleMusicPlaybackButton(
+                        systemName: player.isPlaying ? "pause.fill" : "play.fill",
+                        fontSize: controlPlaySize,
+                        foregroundStyle: .white,
+                        direction: .center,
+                        isMorphing: true
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            player.togglePlay()
+                        }
+                    }
+
+                    Spacer()
+
+                    AppleMusicPlaybackButton(
+                        systemName: "forward.fill",
+                        fontSize: controlMedSize,
+                        foregroundStyle: .white,
+                        direction: .forward
+                    ) {
+                        player.next()
+                    }
+
+                    Spacer()
+
+                    AppleMusicPlaybackButton(
+                        systemName: player.repeatMode.systemImage,
+                        fontSize: controlSmallSize,
+                        foregroundStyle: player.repeatMode.isActive ? themeManager.accentColor : .white.opacity(0.65),
+                        direction: .center
+                    ) {
+                        player.cycleRepeat()
+                    }
+                }
+                .frame(width: coverSize)
+                .padding(.top, 4)
             }
         }
-        .frame(width: coverSize + 120)
-        .frame(maxHeight: .infinity)
-        .padding(.bottom, 20)
-        .padding(.leading, 96 * (320 / coverSize))
+        .frame(width: coverSize)
+        .frame(maxHeight: .infinity, alignment: .center)
     }
 
     private func navigateToArtist(id: Int) {
@@ -333,131 +421,139 @@ private struct LyricsScrollAreaView: View {
     @State private var scrollMonitor: Any? = nil
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ZStack(alignment: .bottomTrailing) {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: styleManager.alignment.horizontalAlignment, spacing: styleManager.fontSize.lineSpacing) {
-                        if player.isLoadingLyrics {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("正在加载歌词...".localized)
-                                    .font(.system(size: styleManager.fontSize.inactiveFontSize))
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                            .frame(maxWidth: .infinity, alignment: styleManager.alignment.frameAlignment)
-                            .padding(.vertical, 40)
-                        } else if player.lyrics.isEmpty {
-                            VStack(spacing: 10) {
-                                Image(systemName: "quote.bubble")
-                                    .font(.system(size: 32))
-                                    .foregroundStyle(.white.opacity(0.3))
-                                Text("纯音乐，请欣赏".localized)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                            .frame(maxWidth: .infinity, alignment: styleManager.alignment.frameAlignment)
-                            .padding(.vertical, 40)
-                        } else {
-                            ForEach(Array(player.lyrics.enumerated()), id: \.element.id) { index, line in
-                                let isActive = index == player.currentLyricIndex
+        GeometryReader { geo in
+            let viewportHeight = geo.size.height
+            // 垂直居中边距：首行与尾行均能完全居中于屏幕视口正中间 (仿 Apple Music 沉浸式视效)
+            let verticalInset = max(80, (viewportHeight - 50) / 2)
 
-                                LyricLineRowView(
-                                    styleManager: styleManager,
-                                    line: line,
-                                    isActive: isActive,
-                                    isUserScrolling: isUserScrolling,
-                                    onSeek: {
-                                        player.seek(to: line.time)
-                                    }
-                                )
-                                .equatable()
-                                .id(line.id)
+            ScrollViewReader { proxy in
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(alignment: styleManager.alignment.horizontalAlignment, spacing: styleManager.fontSize.lineSpacing) {
+                            if player.isLoadingLyrics {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("正在加载歌词...".localized)
+                                        .font(.system(size: styleManager.fontSize.inactiveFontSize))
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
+                                .frame(maxWidth: .infinity, minHeight: max(200, viewportHeight * 0.5), alignment: .center)
+                            } else if player.lyrics.isEmpty {
+                                VStack(spacing: 10) {
+                                    Image(systemName: "quote.bubble")
+                                        .font(.system(size: 32))
+                                        .foregroundStyle(.white.opacity(0.3))
+                                    Text("纯音乐，请欣赏".localized)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
+                                .frame(maxWidth: .infinity, minHeight: max(200, viewportHeight * 0.5), alignment: .center)
+                            } else {
+                                ForEach(Array(player.lyrics.enumerated()), id: \.element.id) { index, line in
+                                    let isActive = index == player.currentLyricIndex
+
+                                    LyricLineRowView(
+                                        styleManager: styleManager,
+                                        line: line,
+                                        isActive: isActive,
+                                        isUserScrolling: isUserScrolling,
+                                        onSeek: {
+                                            player.seek(to: line.time)
+                                        }
+                                    )
+                                    .equatable()
+                                    .id(line.id)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: styleManager.alignment.frameAlignment)
+                        .padding(.top, verticalInset)
+                        .padding(.bottom, verticalInset)
+                        .padding(.horizontal, 24)
+                    }
+
+                    // 悬浮在右下角的“回到正在播放”胶囊按钮（仿 Apple Music 质感）
+                    if isUserScrolling {
+                        Button {
+                            userScrollResumeTask?.cancel()
+                            withAnimation(.easeInOut(duration: 0.45)) {
+                                isUserScrolling = false
+                                scrollToCurrentActive(proxy: proxy)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.down.to.line.compact")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("回到正在播放".localized)
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.8))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        .padding(.bottom, 28)
+                        .padding(.trailing, 28)
+                    }
+                }
+                .onHover { inArea in
+                    isMouseInLyricsArea = inArea
+                }
+                .onAppear {
+                    scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                        if isMouseInLyricsArea {
+                            notifyUserScrolled(proxy: proxy)
+                        }
+                        return event
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(60))
+                        if player.lyrics.indices.contains(player.currentLyricIndex) {
+                            let activeId = player.lyrics[player.currentLyricIndex].id
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                proxy.scrollTo(activeId, anchor: .center)
                             }
                         }
                     }
-                    .padding(.top, 40)
-                    .padding(.bottom, 60)
-                    .padding(.horizontal, 24)
                 }
-                .overlay(alignment: .top) {
-                    if styleManager.isEdgeFadeEnabled {
-                        LinearGradient(
-                            colors: [Color.black.opacity(0.85), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 52)
-                        .allowsHitTesting(false)
+                .onDisappear {
+                    if let monitor = scrollMonitor {
+                        NSEvent.removeMonitor(monitor)
+                        scrollMonitor = nil
                     }
+                    userScrollResumeTask?.cancel()
                 }
-                .overlay(alignment: .bottom) {
-                    if styleManager.isEdgeFadeEnabled {
-                        LinearGradient(
-                            colors: [Color.clear, Color.black.opacity(0.85)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 64)
-                        .allowsHitTesting(false)
-                    }
-                }
-
-                // 悬浮在右下角的“回到正在播放”胶囊按钮（仿 Apple Music 质感）
-                if isUserScrolling {
-                    Button {
-                        userScrollResumeTask?.cancel()
+                .onChange(of: player.currentLyricIndex) {
+                    if !isUserScrolling && player.lyrics.indices.contains(player.currentLyricIndex) {
+                        let activeId = player.lyrics[player.currentLyricIndex].id
                         withAnimation(.easeInOut(duration: 0.45)) {
-                            isUserScrolling = false
-                            scrollToCurrentActive(proxy: proxy)
+                            proxy.scrollTo(activeId, anchor: .center)
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.down.to.line.compact")
-                                .font(.system(size: 11, weight: .bold))
-                            Text("回到正在播放".localized)
-                                .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .onChange(of: player.currentSong?.id) {
+                    isUserScrolling = false
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(80))
+                        if player.lyrics.indices.contains(player.currentLyricIndex) {
+                            let activeId = player.lyrics[player.currentLyricIndex].id
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                proxy.scrollTo(activeId, anchor: .center)
+                            }
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.8))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
                     }
-                    .buttonStyle(.plain)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                    .padding(.bottom, 28)
-                    .padding(.trailing, 28)
                 }
-            }
-            .onHover { inArea in
-                isMouseInLyricsArea = inArea
-            }
-            .onAppear {
-                scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-                    if isMouseInLyricsArea {
-                        notifyUserScrolled(proxy: proxy)
-                    }
-                    return event
-                }
-                if player.lyrics.indices.contains(player.currentLyricIndex) {
-                    let activeId = player.lyrics[player.currentLyricIndex].id
-                    proxy.scrollTo(activeId, anchor: .center)
-                }
-            }
-            .onDisappear {
-                if let monitor = scrollMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    scrollMonitor = nil
-                }
-                userScrollResumeTask?.cancel()
-            }
-            .onChange(of: player.currentLyricIndex) {
-                if !isUserScrolling && player.lyrics.indices.contains(player.currentLyricIndex) {
-                    let activeId = player.lyrics[player.currentLyricIndex].id
-                    withAnimation(.easeInOut(duration: 0.45)) {
-                        proxy.scrollTo(activeId, anchor: .center)
+                .onChange(of: player.lyrics.count) {
+                    if !isUserScrolling && player.lyrics.indices.contains(player.currentLyricIndex) {
+                        let activeId = player.lyrics[player.currentLyricIndex].id
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            proxy.scrollTo(activeId, anchor: .center)
+                        }
                     }
                 }
             }
@@ -512,10 +608,14 @@ private struct LyricsProgressSliderView: View {
     var body: some View {
         @Bindable var p = player
         ProgressSlider(
-            value: $p.progress,
+            value: $p.sliderProgress,
             trackHeight: 5,
             activeColor: .white,
-            inactiveColor: .white.opacity(0.25)
+            inactiveColor: .white.opacity(0.25),
+            commitsOnDragEnd: true,
+            onCommit: { fraction in
+                p.seek(byProgress: fraction)
+            }
         )
     }
 }

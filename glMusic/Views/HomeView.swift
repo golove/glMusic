@@ -43,6 +43,10 @@ struct HomeView: View {
                     } else if let err = errorMsg {
                         errorView(err)
                     } else {
+                        // MARK: - 专属推荐磁贴 (私人 FM 与 每日推荐 30 首)
+                        HomeHeroTilesView(selection: $selection)
+                            .padding(.horizontal, 28)
+
                         // MARK: - 焦点推荐 Banners (Apple Music 顶部大卡片)
                         if !banners.isEmpty {
                             ScrollViewReader { bannerProxy in

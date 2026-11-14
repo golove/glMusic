@@ -21,21 +21,21 @@ struct PlayerBar: View {
     }
 
     var body: some View {
-        HStack{
-            // MARK: - Left · Song Info
+        HStack(spacing: 0) {
+            // MARK: - Left · Playback Controls
             songInfoSection
-                .frame(width: 155, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 12)
 
             // MARK: - Center · Controls + Progress
             controlsSection
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 12)
 
             // MARK: - Right · Volume + Extras
             extrasSection
-                .frame(width: 175, alignment: .trailing)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .frame(height: 42)
         .padding(.horizontal, 18)
@@ -50,46 +50,54 @@ struct PlayerBar: View {
 
     private var songInfoSection: some View {
         HStack(spacing: 12) {
-            Button { player.toggleShuffle() } label: {
-                Image(systemName: "shuffle")
-                    
-                    .font(.system(size: 12))
-                    .foregroundStyle(player.isShuffled ? themeManager.accentColor : .secondary)
-                   
+            AppleMusicPlaybackButton(
+                systemName: "shuffle",
+                fontSize: 12,
+                foregroundStyle: player.isShuffled ? themeManager.accentColor : .secondary,
+                direction: .center
+            ) {
+                player.toggleShuffle()
             }
-            .buttonStyle(.plain)
-         
 
-            Button { player.previous() } label: {
-                Image(systemName: "backward.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.primary)
-                   
+            AppleMusicPlaybackButton(
+                systemName: "backward.fill",
+                fontSize: 15,
+                foregroundStyle: .primary,
+                direction: .backward
+            ) {
+                player.previous()
             }
-            .buttonStyle(.plain)
 
-            Button { player.togglePlay() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.primary)
+            AppleMusicPlaybackButton(
+                systemName: player.isPlaying ? "pause.fill" : "play.fill",
+                fontSize: 24,
+                foregroundStyle: .primary,
+                direction: .center,
+                isMorphing: true
+            ) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    player.togglePlay()
+                }
             }
-            .buttonStyle(.plain)
 
-            Button { player.next() } label: {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.primary)
+            AppleMusicPlaybackButton(
+                systemName: "forward.fill",
+                fontSize: 15,
+                foregroundStyle: .primary,
+                direction: .forward
+            ) {
+                player.next()
             }
-            .buttonStyle(.plain)
 
-            Button { player.cycleRepeat() } label: {
-                Image(systemName: player.repeatMode.systemImage)
-                    .font(.system(size: 12))
-                    .foregroundStyle(player.repeatMode.isActive ? themeManager.accentColor : .secondary)
+            AppleMusicPlaybackButton(
+                systemName: player.repeatMode.systemImage,
+                fontSize: 12,
+                foregroundStyle: player.repeatMode.isActive ? themeManager.accentColor : .secondary,
+                direction: .center
+            ) {
+                player.cycleRepeat()
             }
-            .buttonStyle(.plain)
         }
-       
     }
 
     // MARK: - Controls (Center)
@@ -150,37 +158,34 @@ struct PlayerBar: View {
                         .controlSize(.small)
                 }
 
-                // MARK: - 音质选择 (SoundQualityType)
-                Menu {
-                    ForEach(SoundQualityType.allCases, id: \.self) { quality in
-                        Button {
-                            player.soundQuality = quality
-                        } label: {
-                            HStack {
-                                Text(quality.displayName)
-                                if player.soundQuality == quality {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
+                // MARK: - 发烧级音质与 Hi-Res 专属徽标 (Apple Music 风格)
+                AudioQualityBadgeView(compact: true)
+
+                // MARK: - 心动模式 / 无限漫游徽章按键 (直观常驻)
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        player.toggleInfiniteRoaming()
                     }
                 } label: {
-                    Text(player.soundQuality.shortBadge)
-                        .font(.system(size: 13, weight: .regular))
-                        .lineLimit(1)
-                        .padding(.horizontal, 4.5)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3.5)
-                                .stroke(themeManager.accentColor.opacity(0.85), lineWidth: 0.8)
-                                .background(RoundedRectangle(cornerRadius: 3.5).fill(themeManager.accentColor.opacity(0.12)))
-                        )
-                        .foregroundStyle(themeManager.accentColor)
+                    HStack(spacing: 3) {
+                        HeartbeatModeIcon(isActive: player.isInfiniteRoamingEnabled, size: 13)
+                        if player.isInfiniteRoamingEnabled {
+                            Text("心动模式".localized)
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(player.isInfiniteRoamingEnabled ? themeManager.accentColor : .secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        player.isInfiniteRoamingEnabled
+                            ? themeManager.accentColor.opacity(0.14)
+                            : Color.white.opacity(0.06),
+                        in: Capsule()
+                    )
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("音质选择：当前为 \(player.soundQuality.displayName)".localized)
+                .buttonStyle(.plain)
+                .help(player.isInfiniteRoamingEnabled ? "心动模式 / 无限漫游已开启 (播完后自动根据当前风格接入相似歌曲)".localized : "开启心动模式 / 相似歌曲无限漫游".localized)
 
                 Button {
                     player.toggleLike(for: song)
@@ -287,6 +292,9 @@ struct PlayerBar: View {
                 QueueView(selection: $selection)
             }
 
+            // 睡眠定时器
+            SleepTimerMenuButton()
+
             // 选择播放设备 (放到音量调整前面)
             AudioDevicePickerButton(style: .playerBar)
 
@@ -340,7 +348,14 @@ private struct PlayerProgressSliderView: View {
 
     var body: some View {
         @Bindable var player = player
-        ProgressSlider(value: $player.progress, trackHeight: 3)
+        ProgressSlider(
+            value: $player.sliderProgress,
+            trackHeight: 3,
+            commitsOnDragEnd: true,
+            onCommit: { fraction in
+                player.seek(byProgress: fraction)
+            }
+        )
     }
 }
 
@@ -352,12 +367,16 @@ struct ProgressSlider: View {
     var activeColor: Color? = nil
     var inactiveColor: Color? = nil
     var interactiveHeight: CGFloat = 14
+    var commitsOnDragEnd: Bool = false
+    var onCommit: ((Double) -> Void)? = nil
     @State private var isHovering = false
     @State private var isDragging = false
+    @State private var dragValue: Double = 0
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
+            let displayedValue = isDragging && commitsOnDragEnd ? dragValue : value
             let trackH: CGFloat = (isHovering || isDragging) ? max(trackHeight + 2, 6) : trackHeight
 
             ZStack(alignment: .leading) {
@@ -367,23 +386,117 @@ struct ProgressSlider: View {
 
                 Capsule()
                     .fill(activeColor ?? Color.primary.opacity(0.85))
-                    .frame(width: w > 0 ? max(0, min(w, w * value)) : 0, height: trackH)
+                    .frame(width: w > 0 ? max(0, min(w, w * displayedValue)) : 0, height: trackH)
             }
             .frame(height: geo.size.height)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
+                        if !isDragging {
+                            dragValue = value
+                        }
                         isDragging = true
                         if w > 0 {
-                            value = min(max(drag.location.x / w, 0), 1)
+                            let newValue = min(max(drag.location.x / w, 0), 1)
+                            if commitsOnDragEnd {
+                                dragValue = newValue
+                            } else {
+                                value = newValue
+                            }
                         }
                     }
-                    .onEnded { _ in isDragging = false }
+                    .onEnded { _ in
+                        if commitsOnDragEnd {
+                            value = dragValue
+                            onCommit?(dragValue)
+                        }
+                        isDragging = false
+                    }
             )
             .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovering = h } }
         }
         .frame(height: interactiveHeight)
+    }
+}
+
+// MARK: - Sleep Timer Menu Button
+
+struct SleepTimerMenuButton: View {
+    @Environment(PlayerManager.self) private var player
+    @State private var sleepTimer = SleepTimerManager.shared
+
+    var body: some View {
+        Menu {
+            Section("睡眠定时器".localized) {
+                if sleepTimer.isActive {
+                    Button(role: .destructive) {
+                        sleepTimer.cancel()
+                    } label: {
+                        Label(String(format: "%@ (%@)", "关闭定时器".localized, sleepTimer.remainingFormatted), systemImage: "xmark.circle")
+                    }
+
+                    Divider()
+                }
+
+                Button {
+                    sleepTimer.start(option: .minutes(15), player: player)
+                } label: {
+                    optionLabel(option: .minutes(15), title: "15 分钟".localized)
+                }
+
+                Button {
+                    sleepTimer.start(option: .minutes(30), player: player)
+                } label: {
+                    optionLabel(option: .minutes(30), title: "30 分钟".localized)
+                }
+
+                Button {
+                    sleepTimer.start(option: .minutes(45), player: player)
+                } label: {
+                    optionLabel(option: .minutes(45), title: "45 分钟".localized)
+                }
+
+                Button {
+                    sleepTimer.start(option: .minutes(60), player: player)
+                } label: {
+                    optionLabel(option: .minutes(60), title: "60 分钟".localized)
+                }
+
+                Divider()
+
+                Button {
+                    sleepTimer.start(option: .endOfSong, player: player)
+                } label: {
+                    optionLabel(option: .endOfSong, title: "播完当前歌曲停止".localized)
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: sleepTimer.isActive ? "moon.zzz.fill" : "moon")
+                    .font(.system(size: 14))
+                if sleepTimer.isActive {
+                    Text(sleepTimer.shortBadgeText)
+                        .font(.system(size: 10, weight: .bold).monospacedDigit())
+                }
+            }
+            .foregroundStyle(sleepTimer.isActive ? ThemeManager.shared.accentColor : .secondary)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(sleepTimer.isActive ? String(format: "%@: %@", "睡眠定时器运行中".localized, sleepTimer.remainingFormatted) : "睡眠定时器".localized)
+    }
+
+    @ViewBuilder
+    private func optionLabel(option: SleepTimerOption, title: String) -> some View {
+        HStack {
+            Text(title)
+            if sleepTimer.activeOption == option {
+                Image(systemName: "checkmark")
+            }
+        }
     }
 }
 

@@ -33,20 +33,16 @@ final class DesktopLyricsPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    private var isUpdatingConstraints = false
-
+    // DesktopLyricsPanel 完全使用 frame-based 绝对布局及 autoresizingMask。
+    // 该窗口不依赖且不需要 AppKit 级别的 Auto Layout 约束求解。
+    // 重写 updateConstraintsIfNeeded 为空操作，彻底阻断 AppKit 内部
+    // "Update Constraints in Window pass" 超过视图数量引发的 NSGenericException 崩溃。
     override func updateConstraintsIfNeeded() {
-        guard !isUpdatingConstraints else { return }
-        isUpdatingConstraints = true
-        super.updateConstraintsIfNeeded()
-        isUpdatingConstraints = false
+        // No-op: 阻断窗口级 Auto Layout 约束循环
     }
 
     override func layoutIfNeeded() {
-        guard !isUpdatingConstraints else { return }
-        isUpdatingConstraints = true
         super.layoutIfNeeded()
-        isUpdatingConstraints = false
     }
 
     // 保障 isMovableByWindowBackground 在 nonactivatingPanel + canBecomeKey=false 下正常工作：
@@ -64,11 +60,17 @@ final class DesktopLyricsPanel: NSPanel {
 final class DesktopLyricsHostingView<Content: View>: NSHostingView<Content> {
     private var isUpdating = false
 
+    override var intrinsicContentSize: NSSize {
+        // 纯基于窗口 frame 的布局，不向 AppKit 汇报固有尺寸，避免引发父级窗口约束重排
+        return NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    override func invalidateIntrinsicContentSize() {
+        // 彻底阻断向 NSWindow 传播尺寸失效事件
+    }
+
     override func updateConstraints() {
-        guard !isUpdating else { return }
-        isUpdating = true
-        super.updateConstraints()
-        isUpdating = false
+        // Frame-based; 不向 AppKit 注入或更新任何 Auto Layout 约束
     }
 
     override func layout() {
@@ -152,8 +154,6 @@ final class DesktopLyricsManager {
         }
     }
 
-    var showUnlockHandle: Bool = false
-    var isMouseOverUnlockArea: Bool = false
     var isShowingSettings: Bool = false {
         didSet {
             updateSettingsPanelVisibility()
@@ -162,8 +162,6 @@ final class DesktopLyricsManager {
 
     var panel: NSPanel?
     private var settingsPanel: NSPanel?
-    private var globalMouseMonitor: Any?
-    private var localMouseMonitor: Any?
     private var outsideClickGlobalMonitor: Any?
     private var outsideClickLocalMonitor: Any?
     private var lastClosedTimestamp: Date = .distantPast
@@ -265,10 +263,6 @@ final class DesktopLyricsManager {
 
         if isShowing {
             newPanel.orderFront(nil)
-        }
-
-        if isLocked {
-            startLockMonitor()
         }
     }
 
@@ -519,83 +513,7 @@ final class DesktopLyricsManager {
         panel.ignoresMouseEvents = isLocked
 
         if isLocked {
-            startLockMonitor()
-        } else {
-            stopLockMonitor()
-            showUnlockHandle = false
-            isMouseOverUnlockArea = false
-        }
-    }
-
-    // MARK: - Smart Lock & Unlock Monitor
-
-    private func startLockMonitor() {
-        stopLockMonitor()
-
-        var lastMoveCheckTime: TimeInterval = 0
-        let handleMouseMove: (NSEvent) -> Void = { [weak self] _ in
-            let now = CACurrentMediaTime()
-            guard now - lastMoveCheckTime > 0.05 else { return }
-            lastMoveCheckTime = now
-
-            Task { @MainActor [weak self] in
-                guard let self = self, self.isLocked, let panel = self.panel else { return }
-                let mouseLoc = NSEvent.mouseLocation
-                let frame = panel.frame
-
-                guard frame.contains(mouseLoc) else {
-                    if self.showUnlockHandle {
-                        self.showUnlockHandle = false
-                    }
-                    if self.isMouseOverUnlockArea {
-                        self.isMouseOverUnlockArea = false
-                        panel.ignoresMouseEvents = true
-                    }
-                    return
-                }
-
-                // 鼠标移入歌词面板区域，显现右上角解锁手柄
-                if !self.showUnlockHandle {
-                    self.showUnlockHandle = true
-                }
-
-                // 右上角解锁按钮热区 (100x46 pt)
-                let unlockHotspot = CGRect(
-                    x: frame.maxX - 100,
-                    y: frame.maxY - 46,
-                    width: 100,
-                    height: 46
-                )
-
-                if unlockHotspot.contains(mouseLoc) {
-                    if !self.isMouseOverUnlockArea {
-                        self.isMouseOverUnlockArea = true
-                        panel.ignoresMouseEvents = false // 激活解锁按钮点击
-                    }
-                } else {
-                    if self.isMouseOverUnlockArea {
-                        self.isMouseOverUnlockArea = false
-                        panel.ignoresMouseEvents = true // 其余主体歌词区域保持完全穿透
-                    }
-                }
-            }
-        }
-
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved], handler: handleMouseMove)
-        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { event in
-            handleMouseMove(event)
-            return event
-        }
-    }
-
-    private func stopLockMonitor() {
-        if let g = globalMouseMonitor {
-            NSEvent.removeMonitor(g)
-            globalMouseMonitor = nil
-        }
-        if let l = localMouseMonitor {
-            NSEvent.removeMonitor(l)
-            localMouseMonitor = nil
+            closeSettings()
         }
     }
 }

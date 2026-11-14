@@ -61,20 +61,11 @@ struct glMusicApp: App {
                 }
                 .onAppear {
                     DesktopLyricsManager.shared.setup(playerManager: playerManager, themeManager: themeManager)
+                    MenuBarIconManager.shared.setup(playerManager: playerManager, themeManager: themeManager, languageManager: languageManager)
                 }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1280, height: 800)
-
-        MenuBarExtra {
-            MenuBarView()
-                .environment(playerManager)
-                .environment(themeManager)
-                .environment(languageManager)
-        } label: {
-            Image(nsImage: menuBarIcon)
-        }
-        .menuBarExtraStyle(.window)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("关于 glMusic".localized) {
@@ -150,6 +141,35 @@ struct glMusicApp: App {
 
                 Button(playerManager.isCrossfadeEnabled ? "关闭音频平滑交叉渐变".localized : "开启音频平滑交叉渐变".localized) {
                     playerManager.toggleCrossfade()
+                }
+
+                Button(MenuBarIconManager.shared.isAnimationEnabled ? "关闭状态栏音符律动动效".localized : "开启状态栏音符律动动效".localized) {
+                    MenuBarIconManager.shared.isAnimationEnabled.toggle()
+                }
+
+                Menu("睡眠定时器".localized) {
+                    if SleepTimerManager.shared.isActive {
+                        Button("关闭定时器".localized) {
+                            SleepTimerManager.shared.cancel()
+                        }
+                        Divider()
+                    }
+                    Button("15 分钟".localized) {
+                        SleepTimerManager.shared.start(option: .minutes(15), player: playerManager)
+                    }
+                    Button("30 分钟".localized) {
+                        SleepTimerManager.shared.start(option: .minutes(30), player: playerManager)
+                    }
+                    Button("45 分钟".localized) {
+                        SleepTimerManager.shared.start(option: .minutes(45), player: playerManager)
+                    }
+                    Button("60 分钟".localized) {
+                        SleepTimerManager.shared.start(option: .minutes(60), player: playerManager)
+                    }
+                    Divider()
+                    Button("播完当前歌曲后停止".localized) {
+                        SleepTimerManager.shared.start(option: .endOfSong, player: playerManager)
+                    }
                 }
 
                 Divider()

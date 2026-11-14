@@ -34,12 +34,13 @@ struct ContentView: View {
                         .ignoresSafeArea(.container, edges: .top)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    // 悬浮胶囊播放栏 (仅在非全屏歌词模式下加载，歌词展开时彻底解除背部播放条监听与重绘)
-                    if !player.isShowingLyrics {
+                    // 悬浮胶囊播放栏 (在全屏歌词或私人 FM 独立沉浸界面下隐藏，避免控件重复与视觉违和)
+                    if !player.isShowingLyrics && selection != "personalFm" {
                         PlayerBar(selection: $selection)
                             .padding(.horizontal, 130)
                             .padding(.bottom, 16)
                             .zIndex(99)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
             }
@@ -64,6 +65,7 @@ struct ContentView: View {
         .frame(minWidth: 1280,minHeight: 720)
         .background(WindowToolbarAccessor())
         .animation(.easeInOut(duration: 0.35), value: player.isShowingLyrics)
+        .animation(.easeInOut(duration: 0.25), value: selection == "personalFm")
         .onChange(of: selection) { oldValue, newValue in
             guard !isNavigatingBack else { return }
             if let old = oldValue, old != newValue {
@@ -119,6 +121,8 @@ struct ContentView: View {
         switch selection {
         case "home":
             HomeView(selection: $selection)
+        case "personalFm":
+            PersonalFMView(selection: $selection)
         case "daily":
             DailyRecommendView()
         case "playlistSquare":

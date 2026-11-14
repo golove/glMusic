@@ -17,9 +17,13 @@ import NeteaseCloudMusicAPI
 actor APICache {
     static let shared = APICache()
 
-    private struct MemoryEntry {
+    private final class CacheEntryBox {
         let data: Any
         let expiration: Date
+        init(data: Any, expiration: Date) {
+            self.data = data
+            self.expiration = expiration
+        }
     }
 
     private struct DiskEntry: Codable {
@@ -27,7 +31,13 @@ actor APICache {
         let expiration: Date
     }
 
-    private var storage: [String: MemoryEntry] = [:]
+    /// L1 内存缓存：使用带容量限制与系统内存压力自动释放机制的 NSCache
+    private let memoryCache: NSCache<NSString, CacheEntryBox> = {
+        let cache = NSCache<NSString, CacheEntryBox>()
+        cache.countLimit = 500 // 限制最大缓存条目数，防止无上限膨胀
+        return cache
+    }()
+
     private let diskCacheDirectory: URL
     private let maxDiskBytes: Int64 = 150 * 1024 * 1024 // 150 MB 磁盘配额
     private var lastTrimTime: Date = .distantPast
@@ -49,12 +59,14 @@ actor APICache {
     }
 
     func get<T>(_ key: String) -> T? {
+        let nsKey = key as NSString
+
         // 1. 优先从 L1 内存缓存命中
-        if let entry = storage[key] {
+        if let entry = memoryCache.object(forKey: nsKey) {
             if Date() < entry.expiration {
                 return entry.data as? T
             } else {
-                storage.removeValue(forKey: key)
+                memoryCache.removeObject(forKey: nsKey)
                 removeDiskCache(for: key)
                 return nil
             }
@@ -68,7 +80,9 @@ actor APICache {
                let diskEntry = try? JSONDecoder().decode(DiskEntry.self, from: fileData) {
                 if Date() < diskEntry.expiration {
                     if let decoded = try? JSONDecoder().decode(decodableType, from: diskEntry.rawData) as? T {
-                        storage[key] = MemoryEntry(data: decoded, expiration: diskEntry.expiration)
+                        memoryCache.setObject(CacheEntryBox(data: decoded, expiration: diskEntry.expiration), forKey: nsKey)
+                        // 3. 命中读取时刷新文件修改时间，实现真正按访问时间排序的 LRU
+                        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: targetURL.path)
                         return decoded
                     }
                 } else {
@@ -82,8 +96,10 @@ actor APICache {
 
     func set<T>(_ key: String, value: T, ttl: TimeInterval) {
         let expiration = Date().addingTimeInterval(ttl)
+        let nsKey = key as NSString
+
         // 1. 写入 L1 内存
-        storage[key] = MemoryEntry(data: value, expiration: expiration)
+        memoryCache.setObject(CacheEntryBox(data: value, expiration: expiration), forKey: nsKey)
 
         // 2. 异步序列化写入 L2 磁盘缓存
         if let encodableVal = value as? any Encodable {
@@ -102,7 +118,7 @@ actor APICache {
     }
 
     func remove(_ key: String) {
-        storage.removeValue(forKey: key)
+        memoryCache.removeObject(forKey: key as NSString)
         removeDiskCache(for: key)
     }
 
@@ -112,7 +128,7 @@ actor APICache {
     }
 
     func clearAll() {
-        storage.removeAll()
+        memoryCache.removeAllObjects()
         if let files = try? FileManager.default.contentsOfDirectory(at: diskCacheDirectory, includingPropertiesForKeys: nil) {
             for f in files {
                 try? FileManager.default.removeItem(at: f)
@@ -351,9 +367,14 @@ final class NetworkManager: @unchecked Sendable {
         return res
     }
 
-    // MARK: - Song URL（直连解析 + 智能解灰，破解 VIP 30s/45s 试听限制）
+    // MARK: - Song URL（直连解析 + 智能解灰 + 音频规格提取，破解 VIP 30s/45s 试听限制）
 
     func songURL(id: Int, level: String = "exhigh") async throws -> String? {
+        let (url, _) = try await songURLWithSpec(id: id, level: level)
+        return url
+    }
+
+    func songURLWithSpec(id: Int, level: String = "exhigh") async throws -> (url: String?, spec: AudioQualitySpec) {
         let qualityLevel: SoundQualityType
         switch level {
         case "standard": qualityLevel = .standard
@@ -371,6 +392,35 @@ final class NetworkManager: @unchecked Sendable {
 
         var rawUrlString = firstData?["url"] as? String ?? ""
 
+        // 解析真实音频规格参数
+        let br = firstData?["br"] as? Int ?? (qualityLevel == .hires ? 1411200 : (qualityLevel == .lossless ? 850000 : 320000))
+        let size = (firstData?["size"] as? Int64) ?? Int64((firstData?["size"] as? Int) ?? 0)
+        let rawType = (firstData?["type"] as? String)?.uppercased()
+        let actualLevel = (firstData?["level"] as? String) ?? level
+        let format = rawType ?? ((actualLevel == "hires" || actualLevel == "lossless") ? "FLAC" : "MP3")
+
+        var sampleRate = 44100
+        var bitDepth = 16
+        if actualLevel == "hires" || actualLevel == "jymaster" || br >= 1000000 {
+            bitDepth = 24
+            sampleRate = 96000
+        } else if actualLevel == "lossless" || format == "FLAC" {
+            bitDepth = 16
+            sampleRate = 44100
+        } else {
+            sampleRate = 44100
+            bitDepth = 16
+        }
+
+        var spec = AudioQualitySpec(
+            level: actualLevel,
+            format: format,
+            bitrate: br,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth,
+            size: size
+        )
+
         // 检测是否为 VIP 试听片段或无可用链接
         let freeTime = firstData?["freeTimeTrialPrivilege"] as? [String: Any]
         let remainTime = freeTime?["remainTime"] as? Int ?? 0
@@ -387,6 +437,7 @@ final class NetworkManager: @unchecked Sendable {
                 print("🎉 [glMusic] 智能换源成功！已匹配全曲 320k 完整音源: \(unblocked.platform)")
                 #endif
                 rawUrlString = unblocked.url
+                spec = AudioQualitySpec(level: "exhigh", format: "MP3", bitrate: 320000, sampleRate: 44100, bitDepth: 16, size: 0)
             }
         }
 
@@ -397,10 +448,11 @@ final class NetworkManager: @unchecked Sendable {
                let first = dataList.first,
                let fallbackUrl = first["url"] as? String, !fallbackUrl.isEmpty {
                 rawUrlString = fallbackUrl
+                spec = AudioQualitySpec(level: "exhigh", format: "MP3", bitrate: 320000, sampleRate: 44100, bitDepth: 16, size: 0)
             }
         }
 
-        return normalizeAudioURL(rawUrlString)
+        return (normalizeAudioURL(rawUrlString), spec)
     }
 
     /// 灰色歌曲直接获取链接（GD音乐台等音源匹配）
@@ -610,6 +662,80 @@ final class NetworkManager: @unchecked Sendable {
         let res = r.data?.dailySongs ?? []
         await APICache.shared.set(cacheKey, value: res, ttl: 600)
         return res
+    }
+
+    // MARK: - Personal FM (私人 FM)
+
+    func personalFm() async throws -> [APISong] {
+        let resp = try await client.personalFm()
+        let r: PersonalFmResponse = try decodeResponse(resp)
+        return r.data ?? []
+    }
+
+    func fmTrash(id: Int, alg: String = "RT", time: Int = 25) async throws -> Bool {
+        let resp = try await client.fmTrash(id: id, alg: alg, time: time)
+        let r: BaseAPIResponse = try decodeResponse(resp)
+        return (r.code == 200)
+    }
+
+    // MARK: - Similar Songs & Infinite Roaming (相似歌曲与心动模式漫游)
+
+    func simiSongs(id: Int, limit: Int = 30) async throws -> [APISong] {
+        let cacheKey = "simi_songs_\(id)"
+        if let cached: [APISong] = await APICache.shared.get(cacheKey) {
+            return cached
+        }
+        let resp = try await client.simiSong(id: id, limit: limit)
+        let r: SimiSongResponse = try decodeResponse(resp)
+        let res = r.songs ?? []
+        await APICache.shared.set(cacheKey, value: res, ttl: 300)
+        return res
+    }
+
+    func intelligenceList(id: Int, playlistId: Int, count: Int = 20) async throws -> [APISong] {
+        let resp = try await client.playmodeIntelligenceList(id: id, pid: playlistId, sid: id, count: count)
+        let r: IntelligenceListResponse = try decodeResponse(resp)
+        let res = (r.data ?? []).compactMap(\.resolvedSong)
+        return res
+    }
+
+    /// 根据给定的种子歌曲和上下文歌单，自动获取高质量相似流歌曲 (去除已在播放列表中的歌曲)
+    func fetchInfiniteRoamingSongs(seedSong: APISong, playlistId: Int? = nil, excludeSongIds: Set<Int> = []) async -> [APISong] {
+        var results: [APISong] = []
+
+        // 1. 如果有歌单上下文，优先尝试心动模式智能算法
+        if let pid = playlistId, pid > 0 {
+            if let list = try? await intelligenceList(id: seedSong.id, playlistId: pid), !list.isEmpty {
+                results = list
+            }
+        }
+
+        // 2. 如果无歌单上下文或智能接口未返回，尝试相似歌曲推荐
+        if results.isEmpty {
+            if let list = try? await simiSongs(id: seedSong.id, limit: 30), !list.isEmpty {
+                results = list
+            }
+        }
+
+        // 3. 兜底保障：若冷门歌曲无相似歌曲，请求每日推荐补充，确保无限流「永不停止」
+        if results.isEmpty {
+            if let daily = try? await dailyRecommendSongs(), !daily.isEmpty {
+                results = daily.shuffled()
+            }
+        }
+
+        // 过滤已存在歌曲和种子本身
+        var seen = excludeSongIds
+        seen.insert(seedSong.id)
+        var filtered: [APISong] = []
+        for s in results {
+            if !seen.contains(s.id) {
+                seen.insert(s.id)
+                filtered.append(s)
+            }
+        }
+
+        return filtered
     }
 
     // MARK: - Like Song

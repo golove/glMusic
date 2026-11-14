@@ -34,3 +34,12 @@ jobs:
             -scheme glMusic \
             -destination 'generic/platform=macOS' \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Run Unit Tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project glMusic.xcodeproj \
+            -scheme glMusic \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO

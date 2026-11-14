@@ -53,14 +53,40 @@ struct QueueView: View {
 
                 Spacer()
 
-                // 清空操作
-                if selectedTab == .queue && !player.playlist.isEmpty {
-                    Button("清空".localized) {
-                        player.clearPlaylist()
+                if selectedTab == .queue {
+                    // 心动模式 / 自动无限漫游开关 (Apple Music 风格)
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            player.toggleInfiniteRoaming()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            HeartbeatModeIcon(isActive: player.isInfiniteRoamingEnabled, size: 12)
+                            Text("心动模式".localized)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(player.isInfiniteRoamingEnabled ? themeManager.accentColor : .secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            player.isInfiniteRoamingEnabled
+                                ? themeManager.accentColor.opacity(0.15)
+                                : Color.white.opacity(0.06),
+                            in: Capsule()
+                        )
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(themeManager.accentColor)
+                    .help(player.isInfiniteRoamingEnabled ? "心动模式 / 无限漫游已开启 (播完自动接续相似歌曲)".localized : "开启心动模式 / 相似歌曲无限漫游".localized)
+
+                    // 清空操作
+                    if !player.playlist.isEmpty {
+                        Button("清空".localized) {
+                            player.clearPlaylist()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(themeManager.accentColor)
+                    }
                 } else if selectedTab == .history && !historyManager.historyItems.isEmpty {
                     Button("清空".localized) {
                         historyManager.clearAll()

@@ -488,6 +488,38 @@ struct BaseAPIResponse: Codable {
     let message: String?
 }
 
+// MARK: - Personal FM (私人 FM)
+
+struct PersonalFmResponse: Codable {
+    let code: Int?
+    let data: [APISong]?
+    let popAdjust: Bool?
+}
+
+// MARK: - Similar Songs & Intelligence Roaming (相似歌曲与心动模式)
+
+struct SimiSongResponse: Codable {
+    let code: Int?
+    let songs: [APISong]?
+}
+
+struct IntelligenceSongWrapper: Codable {
+    let id: Int?
+    let recommended: Bool?
+    let songInfo: APISong?
+    let song: APISong?
+
+    var resolvedSong: APISong? {
+        songInfo ?? song
+    }
+}
+
+struct IntelligenceListResponse: Codable {
+    let code: Int?
+    let message: String?
+    let data: [IntelligenceSongWrapper]?
+}
+
 // MARK: - Hot Search
 
 struct HotSearchResponse: Codable {

@@ -15,14 +15,29 @@ import NeteaseCloudMusicAPI
 @Observable
 final class PlayerManager {
 
+    // MARK: - Global Shared Access (AppIntents & System Services)
+
+    static weak var shared: PlayerManager?
+
+    // MARK: - Audiophile Audio Specification
+
+    var currentAudioSpec: AudioQualitySpec?
+
     // MARK: - Playback State
 
     var currentSong: APISong?
+    var currentArtwork: NSImage?
     var currentBlurredArtwork: NSImage?
-    var isPlaying: Bool = false
+    var isPlaying: Bool = false {
+        didSet {
+            MenuBarIconManager.shared.updatePlaybackState(isPlaying: isPlaying)
+        }
+    }
     var currentTime: TimeInterval = 0
     /// 独立 1Hz 秒级更新状态：专供界面时间文本（currentTimeText / remainingTimeText）绑定，消除 10Hz 无效文本重排
     var currentSecond: Int = 0
+    /// 独立 4Hz 进度条平滑状态：专供所有进度滑块绑定，消除 20Hz/30Hz 高频重绘所有进度滑块
+    var sliderProgress: Double = 0.0
     var duration: TimeInterval = 0
     var volume: Double = 0.7 {
         didSet {
@@ -48,9 +63,10 @@ final class PlayerManager {
 
     // MARK: - Crossfade Engine (音频平滑交叉渐变)
 
-    var isCrossfadeEnabled: Bool = UserDefaults.standard.object(forKey: "player_crossfade_enabled") == nil ? true : UserDefaults.standard.bool(forKey: "player_crossfade_enabled") {
+    // 默认关闭交叉渐变，让每首歌曲完整播放至最后一秒并自然换轨；如需 DJ 无缝混音，可在状态栏开启。
+    var isCrossfadeEnabled: Bool = UserDefaults.standard.bool(forKey: "player_crossfade_enabled_v2") {
         didSet {
-            UserDefaults.standard.set(isCrossfadeEnabled, forKey: "player_crossfade_enabled")
+            UserDefaults.standard.set(isCrossfadeEnabled, forKey: "player_crossfade_enabled_v2")
         }
     }
     var crossfadeDuration: Double = {
@@ -87,12 +103,25 @@ final class PlayerManager {
     var playlist: [APISong] = []
     var currentIndex: Int = -1
 
+    // MARK: - Infinite Roaming & Personal FM (心动模式与私人 FM)
+
+    var isInfiniteRoamingEnabled: Bool = UserDefaults.standard.object(forKey: "isInfiniteRoamingEnabled") as? Bool ?? true
+    var isPersonalFM: Bool = false
+    var currentPlaylistId: Int? = nil
+
+    private var isFetchingRoamingSongs: Bool = false
+    private var isFetchingFMSongs: Bool = false
+    private var lastFmFetchTime: Date = .distantPast
+    private var lastRoamingFetchTime: Date = .distantPast
+
     // MARK: - AVPlayer & Session Management
 
     private var player = AVPlayer()
     private var timeObserver: Any?
     private var itemStatusObserver: NSKeyValueObservation?
     private var currentPlaybackTask: Task<Void, Never>?
+    /// Seek 请求完成前忽略 AVPlayer 可能发出的旧时间回调，避免歌词/进度短暂跳回。
+    private var pendingSeekId: UUID?
     /// 播放会话代次标识：防止切歌过快时旧网络/解码任务覆盖新歌曲状态
     private var currentSessionId = UUID()
 
@@ -110,12 +139,13 @@ final class PlayerManager {
     var progress: Double {
         get { duration > 0 ? currentTime / duration : 0 }
         set {
-            let target = newValue * duration
-            currentTime = target
-            currentSecond = Int(target)
-            player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
-            updateNowPlaying()
+            seek(byProgress: newValue)
         }
+    }
+
+    func seek(byProgress fraction: Double) {
+        sliderProgress = max(0, min(1, fraction))
+        seek(to: fraction * duration)
     }
 
     var currentTimeText: String { formatTime(Double(currentSecond)) }
@@ -124,6 +154,7 @@ final class PlayerManager {
     // MARK: - Init & Deinit
 
     init() {
+        Self.shared = self
         let savedVol = UserDefaults.standard.double(forKey: "player_volume")
         if savedVol > 0 {
             volume = savedVol
@@ -153,6 +184,7 @@ final class PlayerManager {
 
     func play(_ song: APISong) {
         cancelCrossfade()
+        pendingSeekId = nil
         let sessionId = UUID()
         self.currentSessionId = sessionId
 
@@ -167,6 +199,9 @@ final class PlayerManager {
         if let idx = playlist.firstIndex(where: { $0.id == song.id }) {
             currentIndex = idx
         } else {
+            // 点播外部新歌曲时退出私人 FM 模式与单歌单绑定
+            isPersonalFM = false
+            currentPlaylistId = nil
             playlist.append(song)
             currentIndex = playlist.count - 1
         }
@@ -188,7 +223,20 @@ final class PlayerManager {
         }
     }
 
-    func playAll(_ songs: [APISong], from index: Int = 0) {
+    static func makePlayerItem(url: URL) -> AVPlayerItem {
+        let asset = AVURLAsset(
+            url: url,
+            options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+        )
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 2.0
+        item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+        return item
+    }
+
+    func playAll(_ songs: [APISong], from index: Int = 0, playlistId: Int? = nil) {
+        isPersonalFM = false
+        currentPlaylistId = playlistId
         guard !songs.isEmpty else { return }
         playlist = songs
         let targetIndex = songs.indices.contains(index) ? index : 0
@@ -200,20 +248,61 @@ final class PlayerManager {
 
     func seek(to time: TimeInterval) {
         cancelCrossfade()
-        currentTime = min(max(time, 0), duration)
-        currentSecond = Int(currentTime)
-        player.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
+        let clampedTime = min(max(time, 0), duration)
+        currentTime = clampedTime
+        currentSecond = Int(clampedTime)
+        sliderProgress = duration > 0 ? clampedTime / duration : 0
+        synchronizeLyricPosition(at: clampedTime)
+        let seekId = UUID()
+        pendingSeekId = seekId
+        let requestedTime = clampedTime
+        let targetTime = CMTime(seconds: requestedTime, preferredTimescale: 44100)
+        let tolerance = CMTime(value: 20, timescale: 1000)
+        player.seek(
+            to: targetTime,
+            toleranceBefore: tolerance,
+            toleranceAfter: tolerance
+        ) { [weak self] finished in
+            Task { @MainActor [weak self] in
+                guard let self, self.pendingSeekId == seekId else { return }
+                self.pendingSeekId = nil
+                guard finished else { return }
+                let actualTime = self.player.currentTime().seconds
+                guard actualTime.isFinite else { return }
+                self.currentTime = actualTime
+                self.currentSecond = Int(actualTime)
+                self.synchronizeLyricPosition(at: actualTime)
+            }
+        }
         updateNowPlaying()
         if duration > 15 && (duration - currentTime) > 15 {
             invalidatePreload()
         }
     }
 
+    private func synchronizeLyricPosition(at time: TimeInterval) {
+        guard !lyrics.isEmpty else {
+            currentLyricIndex = 0
+            return
+        }
+        currentLyricIndex = LyricsService.shared.findLyricIndex(
+            at: time,
+            in: lyrics,
+            currentIndex: currentLyricIndex
+        )
+    }
+
     private func setupItemStatusObserver(for item: AVPlayerItem, songId: Int) {
         itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                if observedItem.status == .failed {
+                if observedItem.status == .readyToPlay {
+                    let actualDuration = observedItem.duration.seconds
+                    if actualDuration.isFinite && actualDuration > 0 {
+                        self.duration = actualDuration
+                        self.updateNowPlaying()
+                    }
+                } else if observedItem.status == .failed {
                     let errMsg = observedItem.error?.localizedDescription ?? "未知错误"
                     print("❌ 音频加载失败 (songId: \(songId)): \(errMsg)")
                     self.isPlaying = false
@@ -240,11 +329,11 @@ final class PlayerManager {
         }
     }
 
-    /// 平滑无爆音切换至新音频项目 (包含 25ms 快速平滑淡出旧音轨 + 纯绝对静音切轨 + 35ms 优雅微淡入新音轨，彻底消灭波形截断爆音与电台杂音)
+    /// 平滑切换音频项目：切轨前微淡出，挂载频谱探针与监听后换轨起播
     private func smoothlyTransitionToItem(_ item: AVPlayerItem, forSongId songId: Int) async {
         guard currentSong?.id == songId else { return }
 
-        // 1. 若当前正在发声，在 20ms 内快速平滑降至 0 音量并暂停旧音频，彻底消灭波形突变产生的爆音/电台杂音
+        // 1. 若当前正在发声，在 20ms 内快速平滑降至 0 音量并暂停旧音频
         if (player.timeControlStatus == .playing || player.rate > 0) && player.volume > 0.02 {
             let startVol = player.volume
             let fadeOutSteps = 5
@@ -261,32 +350,41 @@ final class PlayerManager {
 
         guard currentSong?.id == songId else { return }
 
-        // 2. 配置新项目的防抖预缓冲
-        item.preferredForwardBufferDuration = 2.0
-        item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+        // 2. 挂载音频探针（必须在 replaceCurrentItem 之前完成，避免 CoreAudio 图重新构建产生爆音/杂音）
+        await AudioSpectrumManager.shared.attachTap(to: item)
+        guard currentSong?.id == songId else { return }
 
-        // 3. 绝对静音状态下挂载新项目 (0 杂音、0 杂波冲击声卡 DAC)
+        // 3. 挂载新项目状态监听并载入播放器
         setupItemStatusObserver(for: item, songId: songId)
         player.replaceCurrentItem(with: item)
 
-        // 4. 起播并在 35ms 内由 0 优雅淡入到目标设定音量
+        // 4. 等待新音频准备就绪
+        while true {
+            guard currentSong?.id == songId else { return }
+            guard !Task.isCancelled else { return }
+            switch item.status {
+            case .readyToPlay:
+                break
+            case .failed:
+                isLoading = false
+                return
+            case .unknown:
+                try? await Task.sleep(for: .milliseconds(20))
+                continue
+            @unknown default:
+                isLoading = false
+                return
+            }
+            break
+        }
+
+        // 5. 设置音量并起播 (0 爆音、0 杂波冲击声卡 DAC)
+        player.volume = Float(volume)
         player.play()
         isPlaying = true
         isLoading = false
         failureConsecutiveCount = 0
         updateNowPlaying()
-
-        let targetVol = Float(volume)
-        if targetVol > 0 {
-            let fadeInSteps = 5
-            for step in 1...fadeInSteps {
-                try? await Task.sleep(for: .milliseconds(7))
-                guard currentSong?.id == songId else { return }
-                let factor = Float(step) / Float(fadeInSteps)
-                player.volume = targetVol * factor
-            }
-            player.volume = targetVol
-        }
     }
 
     private func loadAndPlay(songId: Int, sessionId: UUID) async {
@@ -307,7 +405,7 @@ final class PlayerManager {
         if let localURL = DownloadManager.shared.localAudioURL(for: songId) {
             print("💾 播放本地已下载音频: \(currentSong?.name ?? "") → \(localURL.lastPathComponent)")
             guard self.currentSessionId == sessionId && currentSong?.id == songId else { return }
-            let item = AVPlayerItem(url: localURL)
+            let item = Self.makePlayerItem(url: localURL)
             await smoothlyTransitionToItem(item, forSongId: songId)
             return
         }
@@ -316,7 +414,7 @@ final class PlayerManager {
         if let cachedURL = await StreamingCacheManager.shared.cachedAudioURL(for: songId) {
             print("💾 播放本地流媒体缓存音频: \(currentSong?.name ?? "") → \(cachedURL.lastPathComponent)")
             guard self.currentSessionId == sessionId && currentSong?.id == songId else { return }
-            let item = AVPlayerItem(url: cachedURL)
+            let item = Self.makePlayerItem(url: cachedURL)
             await smoothlyTransitionToItem(item, forSongId: songId)
             return
         }
@@ -335,15 +433,18 @@ final class PlayerManager {
         // 4. 走网络流媒体加载
         do {
             // 尝试当前设定的音质
-            var urlStr = try await NetworkManager.shared.songURL(id: songId, level: soundQuality.rawValue)
+            var (urlStr, audioSpec) = try await NetworkManager.shared.songURLWithSpec(id: songId, level: soundQuality.rawValue)
             if urlStr == nil || urlStr?.isEmpty == true {
-                urlStr = try await NetworkManager.shared.songURL(id: songId, level: "standard")
+                (urlStr, audioSpec) = try await NetworkManager.shared.songURLWithSpec(id: songId, level: "standard")
             }
 
             // 灰色歌曲兜底：使用 UnblockNeteaseMusic 匹配
             if urlStr == nil || urlStr?.isEmpty == true {
                 print("🔓 尝试 songURLMatch 解锁灰色歌曲 \(songId)...")
                 urlStr = try await NetworkManager.shared.songURLMatch(id: songId)
+                if urlStr != nil {
+                    audioSpec = AudioQualitySpec(level: "exhigh", format: "MP3", bitrate: 320000, sampleRate: 44100, bitDepth: 16, size: 0)
+                }
             }
 
             guard let finalUrl = urlStr, !finalUrl.isEmpty,
@@ -358,8 +459,10 @@ final class PlayerManager {
             // 确保切歌时旧的网络请求不会覆盖当前最新的歌曲
             guard self.currentSessionId == sessionId && currentSong?.id == songId else { return }
 
-            print("▶️ 播放: \(currentSong?.name ?? "") → \(finalUrl.prefix(80))...")
-            let item = AVPlayerItem(url: url)
+            self.currentAudioSpec = audioSpec
+
+            print("▶️ 播放: \(currentSong?.name ?? "") → \(finalUrl.prefix(80))... [\(audioSpec.technicalSummary)]")
+            let item = Self.makePlayerItem(url: url)
             await smoothlyTransitionToItem(item, forSongId: songId)
 
             // 启动流媒体边播边存后台静默缓存
@@ -382,6 +485,13 @@ final class PlayerManager {
         if repeatMode == .one {
             return currentSong
         }
+        if isPersonalFM {
+            let nextIdx = currentIndex + 1
+            if nextIdx < playlist.count {
+                return playlist[nextIdx]
+            }
+            return nil
+        }
         if isShuffled {
             if playlist.count == 1 { return playlist.first }
             let otherIndices = playlist.indices.filter { $0 != currentIndex }
@@ -396,6 +506,12 @@ final class PlayerManager {
     }
 
     private func triggerPreloadNextSongIfNeeded() {
+        if isPersonalFM {
+            fetchMoreFMSongsIfNeeded()
+        } else if isInfiniteRoamingEnabled {
+            checkAndPrefetchInfiniteRoaming()
+        }
+
         guard let nextSong = getNextSong(), nextSong.id != currentSong?.id else { return }
         if preloadedSongId == nextSong.id || preloadingTask != nil { return }
 
@@ -412,9 +528,9 @@ final class PlayerManager {
 
         // 预取音频直链（依次检查：离线下载 -> 本地流媒体磁盘缓存 -> 异步直链解析）
         if let localURL = DownloadManager.shared.localAudioURL(for: song.id) {
-            targetItem = AVPlayerItem(url: localURL)
+            targetItem = Self.makePlayerItem(url: localURL)
         } else if let cachedURL = await StreamingCacheManager.shared.cachedAudioURL(for: song.id) {
-            targetItem = AVPlayerItem(url: cachedURL)
+            targetItem = Self.makePlayerItem(url: cachedURL)
         } else if song.id > 0 {
             do {
                 var urlStr = try await NetworkManager.shared.songURL(id: song.id, level: soundQuality.rawValue)
@@ -425,7 +541,7 @@ final class PlayerManager {
                     urlStr = try await NetworkManager.shared.songURLMatch(id: song.id)
                 }
                 if let finalUrl = urlStr, let url = URL(string: finalUrl) {
-                    targetItem = AVPlayerItem(url: url)
+                    targetItem = Self.makePlayerItem(url: url)
                 }
             } catch {
                 #if DEBUG
@@ -447,6 +563,7 @@ final class PlayerManager {
 
         guard let item = targetItem else {
             if self.preloadRequestId == requestId {
+                self.preloadedSongId = song.id
                 self.preloadingTask = nil
             }
             return
@@ -487,7 +604,7 @@ final class PlayerManager {
         if preloadedSongId == songId, let lyrics = preloadedLyrics, !lyrics.isEmpty {
             if let sessionId = sessionId, self.currentSessionId != sessionId { return }
             self.lyrics = lyrics
-            self.currentLyricIndex = 0
+            self.synchronizeLyricPosition(at: self.currentTime)
             self.isLoadingLyrics = false
             self.preloadedLyrics = nil
             return
@@ -500,6 +617,7 @@ final class PlayerManager {
         let fetched = await LyricsService.shared.fetchLyrics(for: songId)
         if let sessionId = sessionId, self.currentSessionId != sessionId { return }
         self.lyrics = fetched
+        self.synchronizeLyricPosition(at: self.currentTime)
         self.isLoadingLyrics = false
     }
 
@@ -682,6 +800,14 @@ final class PlayerManager {
         }
     }
 
+    func playOrResume() {
+        if currentSong != nil {
+            resume()
+        } else if let first = playlist.first {
+            play(first)
+        }
+    }
+
     func togglePlay() {
         if isPlaying {
             player.pause()
@@ -740,7 +866,60 @@ final class PlayerManager {
     }
 
     func next() {
+        if isPersonalFM {
+            fetchMoreFMSongsIfNeeded()
+            let nextIndex = currentIndex + 1
+            if nextIndex < playlist.count {
+                currentIndex = nextIndex
+                play(playlist[currentIndex])
+            } else {
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if let newSongs = try? await NetworkManager.shared.personalFm(), !newSongs.isEmpty {
+                        self.playlist.append(contentsOf: newSongs)
+                        self.currentIndex = nextIndex
+                        if self.playlist.indices.contains(self.currentIndex) {
+                            self.play(self.playlist[self.currentIndex])
+                        }
+                    }
+                }
+            }
+            return
+        }
+
         guard !playlist.isEmpty else { return }
+
+        // 心动模式与相似歌曲无限漫游：播完当前队列时自动接入相似歌曲流，永不停止
+        if isInfiniteRoamingEnabled && currentIndex >= playlist.count - 1 && !isShuffled && repeatMode != .one {
+            let seedSong = currentSong ?? playlist.last!
+            let queueIds = Set(playlist.map(\.id))
+            let pid = currentPlaylistId
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let roaming = await NetworkManager.shared.fetchInfiniteRoamingSongs(
+                    seedSong: seedSong,
+                    playlistId: pid,
+                    excludeSongIds: queueIds
+                )
+                if !roaming.isEmpty {
+                    let existing = Set(self.playlist.map(\.id))
+                    let toAdd = roaming.filter { !existing.contains($0.id) }
+                    if !toAdd.isEmpty {
+                        self.playlist.append(contentsOf: toAdd)
+                        self.currentIndex += 1
+                        if self.playlist.indices.contains(self.currentIndex) {
+                            self.play(self.playlist[self.currentIndex])
+                            return
+                        }
+                    }
+                }
+                // 若未能获取到相似歌曲，循环回到首首
+                self.currentIndex = 0
+                self.play(self.playlist[0])
+            }
+            return
+        }
+
         if isShuffled {
             currentIndex = Int.random(in: 0..<playlist.count)
         } else {
@@ -760,6 +939,18 @@ final class PlayerManager {
             return
         }
         guard !playlist.isEmpty else { return }
+        if isPersonalFM {
+            if currentIndex > 0 {
+                currentIndex -= 1
+                play(playlist[currentIndex])
+            } else {
+                player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+                currentTime = 0
+                currentLyricIndex = 0
+                updateNowPlaying()
+            }
+            return
+        }
         let prevIndex = currentIndex - 1
         currentIndex = (prevIndex >= 0 && prevIndex < playlist.count) ? prevIndex : max(0, playlist.count - 1)
         guard playlist.indices.contains(currentIndex) else { return }
@@ -802,6 +993,7 @@ final class PlayerManager {
         // 2. 本地不存在，异步拉取网络封面
         guard let coverUrl = song.coverUrl, let url = URL(string: coverUrl) else {
             if self.currentSessionId == sessionId {
+                self.currentArtwork = nil
                 self.currentBlurredArtwork = nil
             }
             return
@@ -818,6 +1010,7 @@ final class PlayerManager {
 
     private func applyArtwork(_ nsImage: NSImage, for song: APISong, sessionId: UUID) {
         guard self.currentSessionId == sessionId else { return }
+        self.currentArtwork = nsImage
         NowPlayingService.shared.setArtwork(nsImage)
 
         // 异步预生成高斯模糊背景小图
@@ -852,7 +1045,8 @@ final class PlayerManager {
         }
 
         timeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
+            // 20 Hz (每 50ms 刷新一次)，保障逐字卡拉OK扫光丝滑，同时消减 33% 主线程唤醒开销
+            forInterval: CMTime(value: 1, timescale: 20),
             queue: .main
         ) { [weak self] time in
             MainActor.assumeIsolated {
@@ -860,14 +1054,23 @@ final class PlayerManager {
                 let t = time.seconds
                 guard t.isFinite else { return }
 
+                // 拖动进度条寻道期间，校验 AVPlayer 是否已到达目标时间附近；若已到达立即释放，避免时钟冻结
+                if self.pendingSeekId != nil {
+                    if abs(t - self.currentTime) < 0.35 {
+                        self.pendingSeekId = nil
+                    } else {
+                        // 依然为 Seek 前的陈旧时间帧，跳过以防进度条与歌词短暂回跳
+                        return
+                    }
+                }
+
                 self.timeObserverTickCounter &+= 1
 
                 // 智能按需分频降耗 (Adaptive Tick Throttling):
-                // 仅当开启逐字卡拉OK动效或桌面悬浮歌词时，以全频 10Hz (每 100ms) 响应以保障毫秒级扫光流畅；
-                // 普通主界面静置播放、或全屏歌词选择“经典/聚光灯”模式时，无需高频唤醒主线程，
-                // 自动智能降频至 ~3.3Hz (每 300ms 刷新一次)，消减 66% 主线程重排与绘制开销。
-                let isKaraokeActive = (self.isShowingLyrics && LyricsStyleManager.shared.animationMode == .karaoke) || DesktopLyricsManager.shared.isShowing
-                if !isKaraokeActive && (self.timeObserverTickCounter % 3 != 0) {
+                // 仅当开启歌词页面或桌面悬浮歌词时，以全频 20Hz (每 50ms) 响应以保障逐字动效丝滑同步；
+                // 普通主界面静置播放时，无需高频唤醒主线程，自动智能降频至 ~4Hz，消减 80% 主线程重排与绘制开销。
+                let isLyricsActive = self.isShowingLyrics || DesktopLyricsManager.shared.isShowing
+                if !isLyricsActive && (self.timeObserverTickCounter % 5 != 0) {
                     return
                 }
 
@@ -876,6 +1079,14 @@ final class PlayerManager {
                 if self.currentSecond != sec {
                     self.currentSecond = sec
                 }
+
+                // 独立 4Hz 进度条平滑状态更新 (每 5 个 tick 更新一次，彻底阻断 20Hz 无效重排所有进度条)
+                if self.timeObserverTickCounter % 5 == 0 {
+                    let p = self.duration > 0 ? t / self.duration : 0
+                    if abs(self.sliderProgress - p) > 0.001 {
+                        self.sliderProgress = p
+                    }
+                }
                 if !self.lyrics.isEmpty {
                     let newIdx = LyricsService.shared.findLyricIndex(at: t, in: self.lyrics, currentIndex: self.currentLyricIndex)
                     if self.currentLyricIndex != newIdx {
@@ -883,8 +1094,8 @@ final class PlayerManager {
                     }
                 }
 
-                // 距离当前曲目播完最后 15 秒以内时，自动在后台静默预加载下一首歌曲直链与歌词
-                if self.duration > 15 && (self.duration - t) <= 15 {
+                // 距离当前曲目播完最后 15 秒以内（或已播放超过 80%）时，自动在后台静默预加载下一首歌曲直链与歌词
+                if (self.duration > 15 && (self.duration - t) <= 15) || (self.duration > 0 && (t / self.duration) >= 0.8) {
                     self.triggerPreloadNextSongIfNeeded()
                 }
 
@@ -926,6 +1137,12 @@ final class PlayerManager {
                     return
                 }
 
+                // 3. 检查睡眠定时器是否设置了「播完当前歌曲后停止」
+                if SleepTimerManager.shared.activeOption == .endOfSong {
+                    SleepTimerManager.shared.handleSongEnded()
+                    return
+                }
+
                 switch self.repeatMode {
                 case .one:
                     self.currentTime = 0
@@ -941,6 +1158,10 @@ final class PlayerManager {
                     self.next()
                 case .off:
                     if self.currentIndex < self.playlist.count - 1 {
+                        self.next()
+                    } else if self.isPersonalFM {
+                        self.next()
+                    } else if self.isInfiniteRoamingEnabled {
                         self.next()
                     } else {
                         self.isPlaying = false
@@ -974,6 +1195,116 @@ final class PlayerManager {
         return String(format: "%d:%02d", m, s)
     }
 
+    // MARK: - Infinite Roaming & Personal FM Operations (心动模式与私人 FM 操作)
+
+    func toggleInfiniteRoaming() {
+        isInfiniteRoamingEnabled.toggle()
+        UserDefaults.standard.set(isInfiniteRoamingEnabled, forKey: "isInfiniteRoamingEnabled")
+        if isInfiniteRoamingEnabled && !isPersonalFM {
+            checkAndPrefetchInfiniteRoaming()
+        }
+    }
+
+    func startPersonalFM() {
+        isPersonalFM = true
+        currentPlaylistId = nil
+        repeatMode = .off
+        isShuffled = false
+        isLoading = true
+
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                let fmSongs = try await NetworkManager.shared.personalFm()
+                guard self.isPersonalFM else { return }
+                guard !fmSongs.isEmpty else {
+                    self.isLoading = false
+                    return
+                }
+                self.playlist = fmSongs
+                self.currentIndex = 0
+                self.play(fmSongs[0])
+            } catch {
+                print("加载私人 FM 失败: \(error)")
+                self.isLoading = false
+            }
+        }
+    }
+
+    func togglePersonalFM() {
+        if isPersonalFM {
+            togglePlay()
+        } else {
+            startPersonalFM()
+        }
+    }
+
+    func trashCurrentFMSong() {
+        guard let song = currentSong else { return }
+        Task {
+            _ = try? await NetworkManager.shared.fmTrash(id: song.id)
+        }
+        next()
+    }
+
+    func fetchMoreFMSongsIfNeeded() {
+        guard isPersonalFM, !isFetchingFMSongs else { return }
+        // 关键防线：至少间隔 15 秒冷却时间，彻底杜绝重复网络请求风暴与 CPU 飙高
+        guard Date().timeIntervalSince(lastFmFetchTime) >= 15 else { return }
+
+        let remaining = playlist.count - (currentIndex + 1)
+        if remaining <= 1 {
+            lastFmFetchTime = Date()
+            isFetchingFMSongs = true
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                defer { self.isFetchingFMSongs = false }
+                do {
+                    let newSongs = try await NetworkManager.shared.personalFm()
+                    guard self.isPersonalFM else { return }
+                    let existingIds = Set(self.playlist.map(\.id))
+                    let uniqueNew = newSongs.filter { !existingIds.contains($0.id) }
+                    if !uniqueNew.isEmpty {
+                        self.playlist.append(contentsOf: uniqueNew)
+                    }
+                } catch {
+                    print("预加载私人 FM 失败: \(error)")
+                }
+            }
+        }
+    }
+
+    func checkAndPrefetchInfiniteRoaming() {
+        guard isInfiniteRoamingEnabled, !isPersonalFM, !isFetchingRoamingSongs else { return }
+        guard Date().timeIntervalSince(lastRoamingFetchTime) >= 15 else { return }
+        guard let current = currentSong else { return }
+
+        let remaining = playlist.count - (currentIndex + 1)
+        if remaining <= 1 {
+            lastRoamingFetchTime = Date()
+            isFetchingRoamingSongs = true
+            let queueIds = Set(playlist.map(\.id))
+            let pid = currentPlaylistId
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                defer { self.isFetchingRoamingSongs = false }
+                let roamingSongs = await NetworkManager.shared.fetchInfiniteRoamingSongs(
+                    seedSong: current,
+                    playlistId: pid,
+                    excludeSongIds: queueIds
+                )
+                guard self.isInfiniteRoamingEnabled, !self.isPersonalFM else { return }
+                if !roamingSongs.isEmpty {
+                    let existing = Set(self.playlist.map(\.id))
+                    let toAdd = roamingSongs.filter { !existing.contains($0.id) }
+                    if !toAdd.isEmpty {
+                        self.playlist.append(contentsOf: toAdd)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - 音质即时无缝切换重载
 
     func reloadCurrentSongWithNewQuality() async {
@@ -983,12 +1314,15 @@ final class PlayerManager {
         let wasPlaying = isPlaying
         isLoading = true
         do {
-            var urlStr = try await NetworkManager.shared.songURL(id: song.id, level: soundQuality.rawValue)
+            var (urlStr, audioSpec) = try await NetworkManager.shared.songURLWithSpec(id: song.id, level: soundQuality.rawValue)
             if urlStr == nil || urlStr?.isEmpty == true {
-                urlStr = try await NetworkManager.shared.songURL(id: song.id, level: "standard")
+                (urlStr, audioSpec) = try await NetworkManager.shared.songURLWithSpec(id: song.id, level: "standard")
             }
             if urlStr == nil || urlStr?.isEmpty == true {
                 urlStr = try await NetworkManager.shared.songURLMatch(id: song.id)
+                if urlStr != nil {
+                    audioSpec = AudioQualitySpec(level: "exhigh", format: "MP3", bitrate: 320000, sampleRate: 44100, bitDepth: 16, size: 0)
+                }
             }
 
             guard let finalUrl = urlStr, let url = URL(string: finalUrl) else {
@@ -998,13 +1332,20 @@ final class PlayerManager {
 
             guard currentSong?.id == song.id else { return }
 
-            let item = AVPlayerItem(url: url)
+            self.currentAudioSpec = audioSpec
+
+            let item = Self.makePlayerItem(url: url)
+            await AudioSpectrumManager.shared.attachTap(to: item)
+            guard currentSong?.id == song.id else { return }
             setupItemStatusObserver(for: item, songId: song.id)
             player.replaceCurrentItem(with: item)
             if currentPos > 0 {
-                await player.seek(to: CMTime(seconds: currentPos, preferredTimescale: 600))
+                let targetTime = CMTime(seconds: currentPos, preferredTimescale: 44100)
+                let tolerance = CMTime(value: 20, timescale: 1000)
+                await player.seek(to: targetTime, toleranceBefore: tolerance, toleranceAfter: tolerance)
             }
             if wasPlaying {
+                player.volume = Float(volume)
                 player.play()
                 isPlaying = true
             }
@@ -1036,13 +1377,13 @@ final class PlayerManager {
                 self.preloadedItem = nil
                 self.preloadedSongId = nil
             } else if let localURL = DownloadManager.shared.localAudioURL(for: nextSong.id) {
-                nextItem = AVPlayerItem(url: localURL)
+                nextItem = Self.makePlayerItem(url: localURL)
             } else if let cachedURL = await StreamingCacheManager.shared.cachedAudioURL(for: nextSong.id) {
-                nextItem = AVPlayerItem(url: cachedURL)
+                nextItem = Self.makePlayerItem(url: cachedURL)
             } else {
                 if let urlStr = try? await NetworkManager.shared.songURL(id: nextSong.id, level: self.soundQuality.rawValue),
                    let url = URL(string: urlStr) {
-                    nextItem = AVPlayerItem(url: url)
+                    nextItem = Self.makePlayerItem(url: url)
                 }
             }
 
@@ -1056,8 +1397,30 @@ final class PlayerManager {
             self.crossfadingTargetItem = incomingItem
 
             // 初始化淡入播放器
+            await AudioSpectrumManager.shared.attachTap(to: incomingItem)
+            guard self.isCrossfading else { return }
             self.fadePlayer.replaceCurrentItem(with: incomingItem)
             self.fadePlayer.volume = 0.0
+
+            while true {
+                guard self.isCrossfading else { return }
+                guard !Task.isCancelled else { return }
+                switch incomingItem.status {
+                case .readyToPlay:
+                    break
+                case .failed:
+                    self.cancelCrossfade()
+                    return
+                case .unknown:
+                    try? await Task.sleep(for: .milliseconds(20))
+                    continue
+                @unknown default:
+                    self.cancelCrossfade()
+                    return
+                }
+                break
+            }
+
             self.fadePlayer.play()
 
             let steps = max(10, Int(self.crossfadeDuration * 20))
@@ -1122,6 +1485,7 @@ final class PlayerManager {
         UserDefaults.standard.set(nextSong.id, forKey: "last_played_song_id")
         let sessionId = UUID()
         self.currentSessionId = sessionId
+        pendingSeekId = nil
         updateNowPlaying()
         fetchArtwork(for: nextSong, sessionId: sessionId)
 

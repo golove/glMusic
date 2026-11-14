@@ -67,6 +67,9 @@ struct MenuBarView: View {
                     .buttonStyle(.plain)
                     .help("桌面悬浮歌词 (⇧⌘D)".localized)
 
+                    // 睡眠定时器
+                    SleepTimerMenuButton()
+
                     // 打开主界面
                     Button {
                         openMainWindow()
@@ -160,44 +163,57 @@ struct MenuBarView: View {
 
             // MARK: - Playback Controls
             HStack(spacing: 16) {
-                Button { player.toggleShuffle() } label: {
-                    Image(systemName: "shuffle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(player.isShuffled ? themeManager.accentColor : .secondary)
+                AppleMusicPlaybackButton(
+                    systemName: "shuffle",
+                    fontSize: 11,
+                    foregroundStyle: player.isShuffled ? themeManager.accentColor : .secondary,
+                    direction: .center
+                ) {
+                    player.toggleShuffle()
                 }
-                .buttonStyle(.plain)
                 .help("随机播放".localized)
 
-                Button { player.previous() } label: {
-                    Image(systemName: "backward.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.primary)
+                AppleMusicPlaybackButton(
+                    systemName: "backward.fill",
+                    fontSize: 14,
+                    foregroundStyle: .primary,
+                    direction: .backward
+                ) {
+                    player.previous()
                 }
-                .buttonStyle(.plain)
                 .help("上一首 (⌘←)".localized)
 
-                Button { player.togglePlay() } label: {
-                    Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(themeManager.accentColor)
+                AppleMusicPlaybackButton(
+                    systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill",
+                    fontSize: 28,
+                    foregroundStyle: themeManager.accentColor,
+                    direction: .center,
+                    isMorphing: true
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        player.togglePlay()
+                    }
                 }
-                .buttonStyle(.plain)
                 .help("播放/暂停 (空格)".localized)
 
-                Button { player.next() } label: {
-                    Image(systemName: "forward.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.primary)
+                AppleMusicPlaybackButton(
+                    systemName: "forward.fill",
+                    fontSize: 14,
+                    foregroundStyle: .primary,
+                    direction: .forward
+                ) {
+                    player.next()
                 }
-                .buttonStyle(.plain)
                 .help("下一首 (⌘→)".localized)
 
-                Button { player.cycleRepeat() } label: {
-                    Image(systemName: player.repeatMode.systemImage)
-                        .font(.system(size: 11))
-                        .foregroundStyle(player.repeatMode.isActive ? themeManager.accentColor : .secondary)
+                AppleMusicPlaybackButton(
+                    systemName: player.repeatMode.systemImage,
+                    fontSize: 11,
+                    foregroundStyle: player.repeatMode.isActive ? themeManager.accentColor : .secondary,
+                    direction: .center
+                ) {
+                    player.cycleRepeat()
                 }
-                .buttonStyle(.plain)
                 .help("循环模式".localized)
             }
             .padding(.vertical, 2)
@@ -235,7 +251,14 @@ private struct MenuBarProgressSection: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            ProgressSlider(value: $player.progress, trackHeight: 3)
+            ProgressSlider(
+                value: $player.sliderProgress,
+                trackHeight: 3,
+                commitsOnDragEnd: true,
+                onCommit: { fraction in
+                    player.seek(byProgress: fraction)
+                }
+            )
 
             HStack {
                 Text(player.currentTimeText)

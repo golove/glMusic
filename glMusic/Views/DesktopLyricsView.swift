@@ -22,92 +22,71 @@ struct DesktopLyricsView: View {
             // MARK: - 可自定义的自适应背景层
             panelBackground
 
-            VStack(spacing: 4) {
-                // MARK: - 悬停控制栏 (仅在未锁定且鼠标悬停或正在配置外观时显现)
-                if (isHovered || manager.isShowingSettings) && !manager.isLocked {
-                    hoverControlBar
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
+            // MARK: - 双行歌词核心展示区 (独立隔离渲染，垂直水平稳定居中，绝不随 hover 改变任何边距或 frame)
+            DesktopLyricsDisplayArea(manager: manager)
+                .allowsHitTesting(false)
+                .padding(.horizontal, 24)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
 
-                // MARK: - 双行歌词核心展示区 (独立隔离渲染，避免 100ms 卡拉OK进度刷新触发毛玻璃背景与窗口重绘)
-                DesktopLyricsDisplayArea(manager: manager)
-                    .allowsHitTesting(false)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, (isHovered || manager.isShowingSettings) && !manager.isLocked ? 4 : 8)
+            // MARK: - 悬停控制栏 (固定在顶部，使用 opacity 与 hitTesting 控制显隐，不动态增删视图结构)
+            VStack {
+                hoverControlBar
+                    .opacity((isHovered || manager.isShowingSettings) && !manager.isLocked ? 1 : 0)
+                    .allowsHitTesting((isHovered || manager.isShowingSettings) && !manager.isLocked)
+                Spacer()
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.top, 4)
 
-            // MARK: - 右下角窗口尺寸调节拉手 (未锁定且悬停时可见)
-            if isHovered && !manager.isLocked {
-                VStack {
+            // MARK: - 右下角窗口尺寸调节拉手 (未锁定且悬停时可见，不改变布局几何)
+            VStack {
+                Spacer()
+                HStack {
                     Spacer()
-                    HStack {
-                        Spacer()
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.75))
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                            .highPriorityGesture(
-                                DragGesture(minimumDistance: 1)
-                                    .onChanged { gesture in
-                                        guard !manager.isLocked, let panel = manager.panel else { return }
-                                        if resizeStartSize == nil {
-                                            resizeStartSize = panel.frame.size
-                                        }
-                                        guard let start = resizeStartSize else { return }
-                                        let newW = start.width + gesture.translation.width
-                                        let newH = start.height - gesture.translation.height
-                                        manager.liveResizePanel(newWidth: newW, newHeight: newH)
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 1)
+                                .onChanged { gesture in
+                                    guard !manager.isLocked, let panel = manager.panel else { return }
+                                    if resizeStartSize == nil {
+                                        resizeStartSize = panel.frame.size
                                     }
-                                    .onEnded { _ in
-                                        resizeStartSize = nil
-                                        manager.finishResize()
-                                    }
-                            )
-                            .help("按住拖拽可自由调整歌词窗口宽高".localized)
-                            .padding(.bottom, 2)
-                            .padding(.trailing, 2)
-                    }
+                                    guard let start = resizeStartSize else { return }
+                                    let newW = start.width + gesture.translation.width
+                                    let newH = start.height - gesture.translation.height
+                                    manager.liveResizePanel(newWidth: newW, newHeight: newH)
+                                }
+                                .onEnded { _ in
+                                    resizeStartSize = nil
+                                    manager.finishResize()
+                                }
+                        )
+                        .help("按住拖拽可自由调整歌词窗口宽高".localized)
+                        .padding(.bottom, 2)
+                        .padding(.trailing, 2)
                 }
             }
-
-            // MARK: - 锁定状态下的悬浮解锁胶囊 (鼠标移入歌词区即可点击解锁)
-            if manager.isLocked && manager.showUnlockHandle {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button {
-                            manager.unlock()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "lock.fill")
-                                    .font(.system(size: 10, weight: .bold))
-                                Text("点击解锁".localized)
-                                    .font(.system(size: 10, weight: .semibold))
-                            }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(Color.black.opacity(0.85), in: Capsule())
-                            .overlay(Capsule().stroke(themeManager.accentColor, lineWidth: 1.2))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.5), radius: 4, y: 2)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 6)
-                        .padding(.trailing, 10)
-                    }
-                    Spacer()
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            }
+            .opacity(isHovered && !manager.isLocked ? 1 : 0)
+            .allowsHitTesting(isHovered && !manager.isLocked)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: 0.2), value: manager.showUnlockHandle)
         .onHover { hovering in
+            guard !manager.isLocked else {
+                if isHovered { isHovered = false }
+                return
+            }
             withAnimation(.easeInOut(duration: 0.18)) {
                 isHovered = hovering
+            }
+        }
+        .onChange(of: manager.isLocked) { _, locked in
+            if locked {
+                isHovered = false
             }
         }
     }
@@ -179,26 +158,35 @@ struct DesktopLyricsView: View {
             Spacer()
 
             // 快捷播控
-            Button { player.previous() } label: {
-                Image(systemName: "backward.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white)
+            AppleMusicPlaybackButton(
+                systemName: "backward.fill",
+                fontSize: 11,
+                foregroundStyle: .white,
+                direction: .backward
+            ) {
+                player.previous()
             }
-            .buttonStyle(.plain)
 
-            Button { player.togglePlay() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(themeManager.accentColor)
+            AppleMusicPlaybackButton(
+                systemName: player.isPlaying ? "pause.fill" : "play.fill",
+                fontSize: 13,
+                foregroundStyle: themeManager.accentColor,
+                direction: .center,
+                isMorphing: true
+            ) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    player.togglePlay()
+                }
             }
-            .buttonStyle(.plain)
 
-            Button { player.next() } label: {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white)
+            AppleMusicPlaybackButton(
+                systemName: "forward.fill",
+                fontSize: 11,
+                foregroundStyle: .white,
+                direction: .forward
+            ) {
+                player.next()
             }
-            .buttonStyle(.plain)
 
             Divider()
                 .frame(height: 10)
@@ -245,7 +233,7 @@ struct DesktopLyricsView: View {
                     .foregroundStyle(.white.opacity(0.85))
             }
             .buttonStyle(.plain)
-            .help("锁定桌面歌词 (锁定后鼠标移动到右上角点击即可解锁，也可按 ⇧⌘L)".localized)
+            .help("锁定桌面歌词 (锁定后鼠标穿透不触发任何事件，需在应用内或按 ⇧⌘L 解锁)".localized)
 
             // 关闭按钮
             Button {
@@ -350,7 +338,7 @@ private struct DesktopKaraokeLine: View {
         let baseColor: Color = backgroundStyle == .light ? Color.black.opacity(0.8) : Color.white.opacity(0.85)
 
         if progress > 0.0 && progress < 1.0 {
-            // 水平平滑遮罩裁剪 (0 CoreText 字符串重排，0 材质着色器刷新)
+            // 水平平滑硬件裁剪 (0 CoreText 字符串重排，0 材质着色器与软光栅刷新)
             let safeProgress = min(1.0, max(0.0, progress))
 
             ZStack(alignment: .leading) {
@@ -365,20 +353,8 @@ private struct DesktopKaraokeLine: View {
                     .shadow(color: backgroundStyle == .light ? .clear : .black.opacity(0.95), radius: 3, x: 0, y: 1)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
-                            let fillW = geo.size.width * safeProgress
-                            let feather: CGFloat = 8
-                            HStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.white)
-                                    .frame(width: max(0, fillW - feather))
-                                LinearGradient(
-                                    colors: [Color.white, Color.clear],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                                .frame(width: min(feather, fillW))
-                            }
-                            .frame(width: fillW, alignment: .leading)
+                            Rectangle()
+                                .frame(width: geo.size.width * safeProgress)
                         }
                     }
             }

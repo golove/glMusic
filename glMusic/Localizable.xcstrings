@@ -398,6 +398,15 @@
         }
       }
     },
+    "glMusic 尚未运行" : {
+
+    },
+    "glMusic 尚未运行，请先启动应用" : {
+
+    },
+    "HI-RES" : {
+
+    },
     "R&B/Soul" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -448,7 +457,6 @@
 
     },
     "上一首" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -494,7 +502,6 @@
       }
     },
     "下一首" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1528,6 +1535,9 @@
         }
       }
     },
+    "切换 glMusic 的播放或暂停状态" : {
+
+    },
     "切换循环模式" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2448,6 +2458,15 @@
         }
       }
     },
+    "在 glMusic 中开始或恢复播放音乐" : {
+
+    },
+    "在 glMusic 中播放我喜欢的音乐歌单" : {
+
+    },
+    "在 glMusic 中自动播放今日推荐歌单" : {
+
+    },
     "在任意歌曲右键选择「添加到歌单」即可收藏至此" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2977,6 +2996,21 @@
         }
       }
     },
+    "已为您开始播放今日每日推荐 (%lld 首歌曲)" : {
+
+    },
+    "已为您开始播放我喜欢的音乐 (%lld 首)" : {
+
+    },
+    "已切换上一首" : {
+
+    },
+    "已切换下一首" : {
+
+    },
+    "已切换到下一首：%@" : {
+
+    },
     "已匹配官方毫秒级逐字时间轴" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3023,6 +3057,9 @@
         }
       }
     },
+    "已开始播放音乐" : {
+
+    },
     "已扫码，请在手机上点击确认 ✓" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3046,6 +3083,12 @@
         }
       }
     },
+    "已暂停" : {
+
+    },
+    "已暂停播放" : {
+
+    },
     "已过期" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3068,6 +3111,9 @@
           }
         }
       }
+    },
+    "已返回上一首：%@" : {
+
     },
     "广播" : {
       "extractionState" : "stale",
@@ -3390,6 +3436,9 @@
           }
         }
       }
+    },
+    "我喜欢的音乐歌单为空" : {
+
     },
     "我的歌单" : {
       "extractionState" : "stale",
@@ -3851,6 +3900,15 @@
         }
       }
     },
+    "播放失败：%@" : {
+
+    },
+    "播放我喜欢的音乐" : {
+
+    },
+    "播放或暂停" : {
+
+    },
     "播放时间" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3873,6 +3931,9 @@
           }
         }
       }
+    },
+    "播放每日推荐" : {
+
     },
     "播放设备" : {
       "extractionState" : "stale",
@@ -3919,6 +3980,9 @@
           }
         }
       }
+    },
+    "播放音乐" : {
+
     },
     "操作" : {
       "extractionState" : "stale",
@@ -4403,6 +4467,12 @@
         }
       }
     },
+    "暂停 glMusic 当前播放" : {
+
+    },
+    "暂停音乐" : {
+
+    },
     "暂无推荐歌曲" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4679,6 +4749,9 @@
         }
       }
     },
+    "未找到您的歌单" : {
+
+    },
     "未找到相关官方歌单" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4747,6 +4820,9 @@
           }
         }
       }
+    },
+    "未能获取到今日推荐歌曲，请检查网络或登录状态" : {
+
     },
     "本地" : {
       "extractionState" : "stale",
@@ -5554,7 +5630,6 @@
       }
     },
     "正在播放" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5572,6 +5647,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "現正播放"
+          }
+        }
+      }
+    },
+    "正在播放：%@ - %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在播放：%1$@ - %2$@"
           }
         }
       }
@@ -7508,6 +7593,9 @@
         }
       }
     },
+    "获取每日推荐失败：%@" : {
+
+    },
     "获取验证码" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7738,6 +7826,12 @@
         }
       }
     },
+    "请先启动 glMusic" : {
+
+    },
+    "请先在 glMusic 中登录网易云音乐账号" : {
+
+    },
     "请先登录账号" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7876,6 +7970,9 @@
         }
       }
     },
+    "跳至下一首歌曲" : {
+
+    },
     "轻音乐" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7990,6 +8087,9 @@
           }
         }
       }
+    },
+    "返回上一首歌曲" : {
+
     },
     "退出登录" : {
       "extractionState" : "stale",

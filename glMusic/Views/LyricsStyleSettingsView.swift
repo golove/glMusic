@@ -154,8 +154,8 @@ final class LyricsStyleManager {
         didSet { UserDefaults.standard.set(isTranslationEnabled, forKey: "lyrics_show_translation") }
     }
 
-    var isEdgeFadeEnabled: Bool {
-        didSet { UserDefaults.standard.set(isEdgeFadeEnabled, forKey: "lyrics_edge_fade") }
+    var isFluidMotionEnabled: Bool {
+        didSet { UserDefaults.standard.set(isFluidMotionEnabled, forKey: "lyrics_fluid_mesh") }
     }
 
     private init() {
@@ -170,7 +170,7 @@ final class LyricsStyleManager {
 
         self.isDepthBlurEnabled = UserDefaults.standard.object(forKey: "lyrics_depth_blur") as? Bool ?? true
         self.isTranslationEnabled = UserDefaults.standard.object(forKey: "lyrics_show_translation") as? Bool ?? true
-        self.isEdgeFadeEnabled = UserDefaults.standard.object(forKey: "lyrics_edge_fade") as? Bool ?? true
+        self.isFluidMotionEnabled = UserDefaults.standard.object(forKey: "lyrics_fluid_mesh") as? Bool ?? true
     }
 }
 
@@ -312,11 +312,11 @@ struct LyricsStyleSettingsPopover: View {
                 }
                 .toggleStyle(.switch)
 
-                Toggle(isOn: $mgr.isEdgeFadeEnabled) {
+                Toggle(isOn: $mgr.isFluidMotionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("上下边缘渐隐".localized)
+                        Text("动态流光背景".localized)
                             .font(.system(size: 13, weight: .medium))
-                        Text("顶部与底部平滑羽化过渡".localized)
+                        Text("Apple Music 风格微光流体呼吸漫游".localized)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
@@ -375,7 +375,7 @@ struct KaraokeLyricLineView: View {
 
     var body: some View {
         if isActive && progress > 0.0 && progress < 1.0 {
-            // 逐字演唱进行中：底层暗色文本 + 顶层主题色遮罩裁剪（0 CoreText 字符串排版重构，0 渐变材质重构）
+            // 逐字演唱进行中：底层暗色文本 + 顶层主题色硬件裁剪（0 CoreText 字符串排版重构，0 软光栅开销）
             let safeProgress = min(1.0, max(0.0, progress))
             ZStack(alignment: .leading) {
                 Text(text)
@@ -389,20 +389,8 @@ struct KaraokeLyricLineView: View {
                     .foregroundStyle(themeManager.accentColor)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
-                            let fillW = geo.size.width * safeProgress
-                            let feather: CGFloat = 8
-                            HStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.white)
-                                    .frame(width: max(0, fillW - feather))
-                                LinearGradient(
-                                    colors: [Color.white, Color.clear],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                                .frame(width: min(feather, fillW))
-                            }
-                            .frame(width: fillW, alignment: .leading)
+                            Rectangle()
+                                .frame(width: geo.size.width * safeProgress)
                         }
                     }
             }

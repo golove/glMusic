@@ -21,9 +21,10 @@ struct SideBarItem: Identifiable, Hashable {
 enum SideBar {
     static let items: [SideBarItem] = [
         .init(id: "home",           name: "现在就听", systemImage: "play.circle.fill",              children: nil),
+        .init(id: "personalFm",     name: "私人 FM",  systemImage: "dot.radiowaves.left.and.right", children: nil),
         .init(id: "daily",          name: "每日推荐", systemImage: "calendar.badge.clock",          children: nil),
-        .init(id: "playlistSquare", name: "歌单广场", systemImage: "square.grid.3x3.fill",          children: nil),
-        .init(id: "browse",         name: "浏览",     systemImage: "square.grid.2x2",               children: nil),
+        .init(id: "playlistSquare", name: "歌单广场", systemImage: "square.grid.2x2",               children: nil),
+        .init(id: "browse",         name: "浏览",     systemImage: "safari",                        children: nil),
         .init(id: "radio",          name: "广播",     systemImage: "dot.radiowaves.left.and.right",  children: nil),
         .init(id: "search",         name: "搜索",     systemImage: "magnifyingglass",                children: nil),
         .init(id: "library", name: "资料库", systemImage: nil, children: [

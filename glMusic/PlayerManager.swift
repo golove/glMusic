@@ -1399,6 +1399,7 @@ final class PlayerManager {
 
             let item = Self.makePlayerItem(url: url)
             guard currentSong?.id == song.id else { return }
+            await AudioSpectrumManager.shared.attachTap(to: item)
             setupItemStatusObserver(for: item, songId: song.id)
             player.replaceCurrentItem(with: item)
             if currentPos > 0 {

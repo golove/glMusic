@@ -277,7 +277,8 @@ glMusic/
 ## 🚀 快速上手与本地运行
 
 ### 环境要求
-- **macOS**：macOS 15.0 (Sequoia) 或更高版本 (全面支持 Apple Silicon 与 Intel 架构)
+- **macOS**：推荐 **macOS 15.0 (Sequoia)** 及以上；最低支持 **macOS 14.0 (Sonoma)** (全面支持 Apple Silicon 与 Intel 架构)。
+  > **⚠️ 系统兼容性说明**：本项目核心状态层全面基于 Swift 现代响应式 **Observation 框架 (`@Observable` / `@Bindable`)** 与现代 SwiftUI 管线构建，**不支持 macOS 13 (Ventura) 及更早版本**。
 - **Xcode**：Xcode 16.0 或更高版本 (Swift 5.10 / Swift 6)
 - **后端服务**：**无需配置任何外部服务**（内置 Swift 原生 SDK 直连网易云，彻底脱离 Node.js / Docker）
 
@@ -311,6 +312,10 @@ xcodebuild -project glMusic.xcodeproj -scheme glMusic -destination 'platform=mac
 ---
 
 ## ⚠️ 常见问题排查 (FAQ)
+
+### 是否支持 macOS 13 (Ventura) 或更早系统？
+**不支持。**  
+glMusic 全面采用 Swift 现代原生架构开发，状态管理层深度依赖 Apple 在 macOS 14.0+ 引入的 **Observation 框架 (`@Observable`, `@Bindable`)**，并在 UI 层使用了多项现代 SwiftUI 特性（如 `.onChange(of:initial:_:)`、`.symbolEffect`、`.scrollTargetLayout`、`.onKeyPress` 等）。macOS 13 缺少底层运行时支持，因此无法向下兼容。推荐在 **macOS 14 (Sonoma)** 或 **macOS 15 (Sequoia)** 上运行。
 
 ### 安装后 macOS 提示「文件已损坏，无法打开」？
 由于 macOS Gatekeeper 安全机制，从第三方渠道下载未经过 Apple 公证签名的发布包可能被系统隔离。请在终端执行以下命令解除安全隔离限制：

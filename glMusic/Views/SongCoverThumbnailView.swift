@@ -460,6 +460,7 @@ struct CachedAsyncCoverView: View {
     }
 
     private func startLoading() {
+        if coverImage != nil { return }
         // 1. 优先内存快查 (0ms 瞬时命中)
         if let cached = SongThumbnailCache.shared.image(forKey: cacheKey) {
             coverImage = cached

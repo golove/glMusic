@@ -158,6 +158,11 @@ final class LyricsStyleManager {
         didSet { UserDefaults.standard.set(isFluidMotionEnabled, forKey: "lyrics_fluid_mesh") }
     }
 
+    /// 歌词时间轴微调偏移量（毫秒）：正数延后显示，负数提前显示
+    var lyricOffsetMs: Double {
+        didSet { UserDefaults.standard.set(lyricOffsetMs, forKey: "lyrics_offset_ms") }
+    }
+
     private init() {
         let alignRaw = UserDefaults.standard.string(forKey: "lyrics_alignment") ?? LyricsAlignment.leading.rawValue
         self.alignment = LyricsAlignment(rawValue: alignRaw) ?? .leading
@@ -171,6 +176,7 @@ final class LyricsStyleManager {
         self.isDepthBlurEnabled = UserDefaults.standard.object(forKey: "lyrics_depth_blur") as? Bool ?? true
         self.isTranslationEnabled = UserDefaults.standard.object(forKey: "lyrics_show_translation") as? Bool ?? true
         self.isFluidMotionEnabled = UserDefaults.standard.object(forKey: "lyrics_fluid_mesh") as? Bool ?? true
+        self.lyricOffsetMs = UserDefaults.standard.double(forKey: "lyrics_offset_ms")
     }
 }
 
@@ -288,7 +294,68 @@ struct LyricsStyleSettingsPopover: View {
 
             Divider()
 
-            // 4. 细节动效与开关
+            // 4. 时间轴微调 (Offset)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("时间轴微调".localized)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    if mgr.lyricOffsetMs != 0 {
+                        Button("重置".localized) {
+                            mgr.lyricOffsetMs = 0
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(themeManager.accentColor)
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        mgr.lyricOffsetMs = max(-2000, mgr.lyricOffsetMs - 50)
+                    } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 26, height: 24)
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("提前 50ms (快于人声)".localized)
+
+                    Spacer()
+
+                    Text(offsetDisplayText(mgr.lyricOffsetMs))
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(mgr.lyricOffsetMs == 0 ? .secondary : themeManager.accentColor)
+
+                    Spacer()
+
+                    Button {
+                        mgr.lyricOffsetMs = min(2000, mgr.lyricOffsetMs + 50)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 26, height: 24)
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("延后 50ms (慢于人声)".localized)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+
+                Text("若歌词慢于人声点「-」提前，快于人声点「+」延后".localized)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            // 5. 细节动效与开关
             VStack(alignment:.leading,spacing: 10) {
                 Toggle(isOn: $mgr.isDepthBlurEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -326,6 +393,16 @@ struct LyricsStyleSettingsPopover: View {
         }
         .padding(16)
         .frame(width: 270)
+    }
+
+    private func offsetDisplayText(_ ms: Double) -> String {
+        if abs(ms) < 1 {
+            return "精准同步 (0ms)".localized
+        } else if ms > 0 {
+            return String(format: "延后 +%dms".localized, Int(ms))
+        } else {
+            return String(format: "提前 %dms".localized, Int(ms))
+        }
     }
 }
 
@@ -386,11 +463,12 @@ struct KaraokeLyricLineView: View {
                 Text(text)
                     .font(font)
                     .multilineTextAlignment(textAlignment)
-                    .foregroundStyle(themeManager.accentColor)
+                    .foregroundStyle(activeGradient)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
                             Rectangle()
-                                .frame(width: geo.size.width * safeProgress)
+                                .frame(width: max(0, geo.size.width * safeProgress))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         }
                     }
             }
@@ -399,13 +477,13 @@ struct KaraokeLyricLineView: View {
             Text(text)
                 .font(font)
                 .multilineTextAlignment(textAlignment)
-                .foregroundStyle(themeManager.accentColor)
+                .foregroundStyle(activeGradient)
         } else {
-            // 未开始演唱：显示静止未激活状态，0 渐变开销
+            // 未开始演唱 (progress <= 0) 或非活跃行：显示静止底色文本，杜绝提前高亮闪烁
             Text(text)
                 .font(font)
                 .multilineTextAlignment(textAlignment)
-                .foregroundStyle(isActive ? AnyShapeStyle(activeGradient) : AnyShapeStyle(inactiveColor))
+                .foregroundStyle(inactiveColor)
         }
     }
 }

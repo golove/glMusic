@@ -9,6 +9,7 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 import CoreImage
+import os
 import NeteaseCloudMusicAPI
 
 @MainActor
@@ -85,7 +86,13 @@ final class PlayerManager {
 
     // MARK: - UI States
 
-    var isShowingLyrics: Bool = false
+    var isShowingLyrics: Bool = false {
+        didSet {
+            if oldValue != isShowingLyrics {
+                updateTimeObserverFrequencyIfNeeded()
+            }
+        }
+    }
     var isShowingQueue: Bool = false
 
     // MARK: - Lyrics
@@ -106,7 +113,13 @@ final class PlayerManager {
     // MARK: - Infinite Roaming & Personal FM (心动模式与私人 FM)
 
     var isInfiniteRoamingEnabled: Bool = UserDefaults.standard.object(forKey: "isInfiniteRoamingEnabled") as? Bool ?? true
-    var isPersonalFM: Bool = false
+    var isPersonalFM: Bool = false {
+        didSet {
+            if oldValue != isPersonalFM {
+                updateTimeObserverFrequencyIfNeeded()
+            }
+        }
+    }
     var currentPlaylistId: Int? = nil
 
     private var isFetchingRoamingSongs: Bool = false
@@ -211,6 +224,11 @@ final class PlayerManager {
 
         // Save last played
         UserDefaults.standard.set(song.id, forKey: "last_played_song_id")
+
+        // 切歌时，取消旧歌曲的流媒体后台缓存任务，释放全部带宽与 I/O 给当前起播歌曲
+        Task {
+            await StreamingCacheManager.shared.cancelAllCaching(except: song.id)
+        }
 
         updateNowPlaying()
         fetchArtwork(for: song, sessionId: sessionId)
@@ -329,6 +347,55 @@ final class PlayerManager {
         }
     }
 
+    /// 异步等待音频项达到可播放就绪状态（基于 KVO 异步挂起响应，0ms 盲等，0 CPU 唤醒）
+    private func waitUntilReadyToPlay(_ item: AVPlayerItem) async -> Bool {
+        if item.status == .readyToPlay { return true }
+        if item.status == .failed { return false }
+
+        nonisolated final class WaiterBox: @unchecked Sendable {
+            var observation: NSKeyValueObservation?
+            var continuation: CheckedContinuation<Bool, Never>?
+            var isDone = false
+            var lock = os_unfair_lock()
+
+            nonisolated func finish(with result: Bool) {
+                os_unfair_lock_lock(&lock)
+                defer { os_unfair_lock_unlock(&lock) }
+                guard !isDone else { return }
+                isDone = true
+                observation?.invalidate()
+                observation = nil
+                let cont = continuation
+                continuation = nil
+                cont?.resume(returning: result)
+            }
+        }
+
+        let box = WaiterBox()
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                box.continuation = continuation
+                box.observation = item.observe(\.status, options: [.new]) { observedItem, _ in
+                    if observedItem.status == .readyToPlay {
+                        box.finish(with: true)
+                    } else if observedItem.status == .failed {
+                        box.finish(with: false)
+                    }
+                }
+
+                // 注册监听后的二次状态快速检查，杜绝竞态条件
+                if item.status == .readyToPlay {
+                    box.finish(with: true)
+                } else if item.status == .failed {
+                    box.finish(with: false)
+                }
+            }
+        } onCancel: {
+            box.finish(with: false)
+        }
+    }
+
     /// 平滑切换音频项目：切轨前微淡出，挂载频谱探针与监听后换轨起播
     private func smoothlyTransitionToItem(_ item: AVPlayerItem, forSongId songId: Int) async {
         guard currentSong?.id == songId else { return }
@@ -350,32 +417,18 @@ final class PlayerManager {
 
         guard currentSong?.id == songId else { return }
 
-        // 2. 挂载音频探针（必须在 replaceCurrentItem 之前完成，避免 CoreAudio 图重新构建产生爆音/杂音）
-        await AudioSpectrumManager.shared.attachTap(to: item)
-        guard currentSong?.id == songId else { return }
-
-        // 3. 挂载新项目状态监听并载入播放器
+        // 2. 挂载新项目状态监听与音频频谱探针，并载入播放器
         setupItemStatusObserver(for: item, songId: songId)
+        await AudioSpectrumManager.shared.attachTap(to: item)
         player.replaceCurrentItem(with: item)
 
-        // 4. 等待新音频准备就绪
-        while true {
-            guard currentSong?.id == songId else { return }
-            guard !Task.isCancelled else { return }
-            switch item.status {
-            case .readyToPlay:
-                break
-            case .failed:
+        // 4. 等待新音频准备就绪 (基于 KVO 异步挂起响应，0ms 盲等，0 CPU 占用)
+        let isReady = await waitUntilReadyToPlay(item)
+        guard isReady, currentSong?.id == songId, !Task.isCancelled else {
+            if !isReady && currentSong?.id == songId {
                 isLoading = false
-                return
-            case .unknown:
-                try? await Task.sleep(for: .milliseconds(20))
-                continue
-            @unknown default:
-                isLoading = false
-                return
             }
-            break
+            return
         }
 
         // 5. 设置音量并起播 (0 爆音、0 杂波冲击声卡 DAC)
@@ -1037,6 +1090,18 @@ final class PlayerManager {
     // MARK: - Observers
 
     private var timeObserverTickCounter: Int = 0
+    private var currentTimeObserverTimescale: Int32 = 4
+
+    /// 动态调节时间监听器刷新率：歌词处于可见状态（全屏歌词、桌面歌词或私人FM）时使用 30Hz (~33ms)，
+    /// 普通主界面静置后台播放时直接降为 4Hz (250ms)，消除 80% 线程上下文切换与无效重排
+    func updateTimeObserverFrequencyIfNeeded() {
+        let isLyricsActive = isShowingLyrics || DesktopLyricsManager.shared.isShowing || isPersonalFM
+        let targetTimescale: Int32 = isLyricsActive ? 30 : 4
+        if currentTimeObserverTimescale != targetTimescale || timeObserver == nil {
+            currentTimeObserverTimescale = targetTimescale
+            setupTimeObserver()
+        }
+    }
 
     private func setupTimeObserver() {
         if let existing = timeObserver {
@@ -1044,9 +1109,12 @@ final class PlayerManager {
             timeObserver = nil
         }
 
+        let isLyricsActive = isShowingLyrics || DesktopLyricsManager.shared.isShowing || isPersonalFM
+        let targetTimescale: Int32 = isLyricsActive ? 30 : 4
+        currentTimeObserverTimescale = targetTimescale
+
         timeObserver = player.addPeriodicTimeObserver(
-            // 20 Hz (每 50ms 刷新一次)，保障逐字卡拉OK扫光丝滑，同时消减 33% 主线程唤醒开销
-            forInterval: CMTime(value: 1, timescale: 20),
+            forInterval: CMTime(value: 1, timescale: targetTimescale),
             queue: .main
         ) { [weak self] time in
             MainActor.assumeIsolated {
@@ -1066,29 +1134,24 @@ final class PlayerManager {
 
                 self.timeObserverTickCounter &+= 1
 
-                // 智能按需分频降耗 (Adaptive Tick Throttling):
-                // 仅当开启歌词页面或桌面悬浮歌词时，以全频 20Hz (每 50ms) 响应以保障逐字动效丝滑同步；
-                // 普通主界面静置播放时，无需高频唤醒主线程，自动智能降频至 ~4Hz，消减 80% 主线程重排与绘制开销。
-                let isLyricsActive = self.isShowingLyrics || DesktopLyricsManager.shared.isShowing
-                if !isLyricsActive && (self.timeObserverTickCounter % 5 != 0) {
-                    return
-                }
-
                 self.currentTime = t
                 let sec = Int(t)
                 if self.currentSecond != sec {
                     self.currentSecond = sec
                 }
 
-                // 独立 4Hz 进度条平滑状态更新 (每 5 个 tick 更新一次，彻底阻断 20Hz 无效重排所有进度条)
-                if self.timeObserverTickCounter % 5 == 0 {
+                // 4Hz 进度条平滑状态更新 (当以 30Hz 驱动歌词时，每 7 个 tick 更新一次，消除 30Hz 高频重绘所有进度滑块)
+                if !isLyricsActive || (self.timeObserverTickCounter % 7 == 0) {
                     let p = self.duration > 0 ? t / self.duration : 0
-                    if abs(self.sliderProgress - p) > 0.001 {
+                    if abs(self.sliderProgress - p) > 0.0005 {
                         self.sliderProgress = p
                     }
                 }
+
                 if !self.lyrics.isEmpty {
-                    let newIdx = LyricsService.shared.findLyricIndex(at: t, in: self.lyrics, currentIndex: self.currentLyricIndex)
+                    let offsetSec = LyricsStyleManager.shared.lyricOffsetMs / 1000.0
+                    let effectiveT = max(0, t - offsetSec)
+                    let newIdx = LyricsService.shared.findLyricIndex(at: effectiveT, in: self.lyrics, currentIndex: self.currentLyricIndex)
                     if self.currentLyricIndex != newIdx {
                         self.currentLyricIndex = newIdx
                     }
@@ -1335,7 +1398,6 @@ final class PlayerManager {
             self.currentAudioSpec = audioSpec
 
             let item = Self.makePlayerItem(url: url)
-            await AudioSpectrumManager.shared.attachTap(to: item)
             guard currentSong?.id == song.id else { return }
             setupItemStatusObserver(for: item, songId: song.id)
             player.replaceCurrentItem(with: item)
@@ -1396,29 +1458,19 @@ final class PlayerManager {
 
             self.crossfadingTargetItem = incomingItem
 
-            // 初始化淡入播放器
-            await AudioSpectrumManager.shared.attachTap(to: incomingItem)
+            // 初始化淡入播放器并挂载音频频谱监听探针
             guard self.isCrossfading else { return }
+            await AudioSpectrumManager.shared.attachTap(to: incomingItem)
             self.fadePlayer.replaceCurrentItem(with: incomingItem)
             self.fadePlayer.volume = 0.0
 
-            while true {
-                guard self.isCrossfading else { return }
-                guard !Task.isCancelled else { return }
-                switch incomingItem.status {
-                case .readyToPlay:
-                    break
-                case .failed:
+            // 等待淡入新曲目就绪 (KVO 异步挂起响应，0ms 盲等)
+            let isReady = await self.waitUntilReadyToPlay(incomingItem)
+            guard isReady, self.isCrossfading, !Task.isCancelled else {
+                if !isReady {
                     self.cancelCrossfade()
-                    return
-                case .unknown:
-                    try? await Task.sleep(for: .milliseconds(20))
-                    continue
-                @unknown default:
-                    self.cancelCrossfade()
-                    return
                 }
-                break
+                return
             }
 
             self.fadePlayer.play()

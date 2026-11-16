@@ -182,6 +182,15 @@ final class AudioSpectrumManager: @unchecked Sendable {
         return tap
     }
 
+    private func updateActiveTapID(_ tapID: UUID) {
+        os_unfair_lock_lock(&sampleBufferLock)
+        activeTapID = tapID
+        if let fmt = tapFormats[tapID] {
+            currentTapFormat = fmt
+        }
+        os_unfair_lock_unlock(&sampleBufferLock)
+    }
+
     /// 将音频探针挂载到指定的 AVPlayerItem 上
     func attachTap(to item: AVPlayerItem) async {
         do {
@@ -190,12 +199,7 @@ final class AudioSpectrumManager: @unchecked Sendable {
 
             let tapID = UUID()
             guard let tap = makeAudioTap(id: tapID) else { return }
-            os_unfair_lock_lock(&sampleBufferLock)
-            activeTapID = tapID
-            if let fmt = tapFormats[tapID] {
-                currentTapFormat = fmt
-            }
-            os_unfair_lock_unlock(&sampleBufferLock)
+            updateActiveTapID(tapID)
 
             let params = AVMutableAudioMixInputParameters(track: track)
             params.audioTapProcessor = tap

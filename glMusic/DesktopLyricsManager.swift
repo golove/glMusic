@@ -108,6 +108,9 @@ final class DesktopLyricsManager {
         didSet {
             UserDefaults.standard.set(isShowing, forKey: "desktop_lyrics_enabled")
             updatePanelVisibility()
+            Task { @MainActor in
+                PlayerManager.shared?.updateTimeObserverFrequencyIfNeeded()
+            }
         }
     }
 

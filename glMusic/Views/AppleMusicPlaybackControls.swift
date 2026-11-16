@@ -9,9 +9,9 @@ import SwiftUI
 
 /// 播放控制按钮运动方向
 enum PlaybackControlDirection {
-    case forward   // 下一首：三箭头向右流动穿梭
-    case backward  // 上一首：三箭头向左流动穿梭
-    case center    // 播放/暂停/循环/随机：弹性形变与形态渐变
+    case forward   // 下一首：向右弹性物理冲程
+    case backward  // 上一首：向左弹性物理冲程
+    case center    // 播放/暂停/循环/随机：按压弹性形变与回弹
 }
 
 /// Apple Music 风格微拟物弹性按钮样式
@@ -34,7 +34,7 @@ struct AppleMusicPlaybackButtonStyle: ButtonStyle {
 /// - 退出箭头 (Exiting)：向外滑动淡出并轻微缩小
 /// - 推进箭头 (Advancing)：从后位平滑推进至前位
 /// - 补位新箭头 (Entering)：从后方深处滑入并淡入放大补位
-/// 数学上满足 C^0 全局连续性，连续快速点击无任何跳变与闪烁
+/// 采用单调无振荡三次贝塞尔曲线驱动，彻底杜绝弹簧越界频闪与反向抖动
 struct AppleMusicChevronConveyorView: View, Animatable {
     var progress: CGFloat
     let isForward: Bool
@@ -46,34 +46,37 @@ struct AppleMusicChevronConveyorView: View, Animatable {
     }
 
     var body: some View {
-        let d = size * 0.44
+        let d = size * 0.54
         let dir: CGFloat = isForward ? 1.0 : -1.0
-        let triSize = size * 0.68
+        let triSize = size * 0.70
         let step = floor(progress)
-        let localP = progress - step
+        let localP = max(0, min(1, progress - step))
 
         ZStack {
             // 退出箭头 (向外滑动淡出)
             Image(systemName: "play.fill")
-                .font(.system(size: triSize))
+                .font(.system(size: triSize, weight: .semibold))
                 .rotationEffect(isForward ? .zero : .degrees(180))
                 .scaleEffect(max(0.2, 1.0 - localP * 0.35))
                 .opacity(max(0, 1.0 - Double(localP) * 1.3))
                 .offset(x: (isForward ? (d * 0.5) : (-d * 0.5)) + dir * localP * d)
+                .accessibilityHidden(true)
 
             // 推进箭头 (从后位推进至前位)
             Image(systemName: "play.fill")
-                .font(.system(size: triSize))
+                .font(.system(size: triSize, weight: .semibold))
                 .rotationEffect(isForward ? .zero : .degrees(180))
                 .offset(x: (isForward ? (-d * 0.5) : (d * 0.5)) + dir * localP * d)
+                .accessibilityHidden(true)
 
             // 补位新箭头 (从后方深处渐入补位)
             Image(systemName: "play.fill")
-                .font(.system(size: triSize))
+                .font(.system(size: triSize, weight: .semibold))
                 .rotationEffect(isForward ? .zero : .degrees(180))
                 .scaleEffect(min(1.0, 0.65 + localP * 0.35))
                 .opacity(min(1.0, max(0, Double(localP) * 1.3)))
                 .offset(x: (isForward ? (-d * 1.5) : (d * 1.5)) + dir * localP * d)
+                .accessibilityHidden(true)
         }
         .frame(width: size * 1.4, height: size)
     }
@@ -89,6 +92,8 @@ struct AppleMusicPlaybackButton<S: ShapeStyle>: View {
     var foregroundStyle: S
     var direction: PlaybackControlDirection = .center
     var isMorphing: Bool = false
+    var isCircular: Bool = false
+    var circleSize: CGFloat = 44
     let action: () -> Void
 
     @State private var triggerCount: Int = 0
@@ -101,6 +106,8 @@ struct AppleMusicPlaybackButton<S: ShapeStyle>: View {
         foregroundStyle: S = .primary,
         direction: PlaybackControlDirection = .center,
         isMorphing: Bool = false,
+        isCircular: Bool = false,
+        circleSize: CGFloat = 44,
         action: @escaping () -> Void
     ) {
         self.systemName = systemName
@@ -108,6 +115,8 @@ struct AppleMusicPlaybackButton<S: ShapeStyle>: View {
         self.foregroundStyle = foregroundStyle
         self.direction = direction
         self.isMorphing = isMorphing
+        self.isCircular = isCircular
+        self.circleSize = circleSize
         self.action = action
     }
 
@@ -116,33 +125,7 @@ struct AppleMusicPlaybackButton<S: ShapeStyle>: View {
             triggerAnimation()
             action()
         } label: {
-            Group {
-                if direction == .forward {
-                    AppleMusicChevronConveyorView(
-                        progress: conveyorProgress,
-                        isForward: true,
-                        size: fontSize
-                    )
-                } else if direction == .backward {
-                    AppleMusicChevronConveyorView(
-                        progress: conveyorProgress,
-                        isForward: false,
-                        size: fontSize
-                    )
-                } else if isMorphing {
-                    Image(systemName: systemName)
-                        .font(.system(size: fontSize))
-                        .contentTransition(.symbolEffect(.replace))
-                        .symbolEffect(.bounce, value: triggerCount)
-                } else {
-                    Image(systemName: systemName)
-                        .font(.system(size: fontSize))
-                        .symbolEffect(.bounce, value: triggerCount)
-                }
-            }
-            .foregroundStyle(foregroundStyle)
-            .opacity(isHovering ? 1.0 : 0.90)
-            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            buttonContent
         }
         .buttonStyle(AppleMusicPlaybackButtonStyle(direction: direction))
         .onHover { hovering in
@@ -150,11 +133,53 @@ struct AppleMusicPlaybackButton<S: ShapeStyle>: View {
         }
     }
 
+    @ViewBuilder
+    private var buttonContent: some View {
+        let content = Group {
+            if direction == .forward {
+                AppleMusicChevronConveyorView(
+                    progress: conveyorProgress,
+                    isForward: true,
+                    size: fontSize
+                )
+            } else if direction == .backward {
+                AppleMusicChevronConveyorView(
+                    progress: conveyorProgress,
+                    isForward: false,
+                    size: fontSize
+                )
+            } else if isMorphing {
+                Image(systemName: systemName)
+                    .font(.system(size: fontSize, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: triggerCount)
+            } else {
+                Image(systemName: systemName)
+                    .font(.system(size: fontSize, weight: .semibold))
+                    .symbolEffect(.bounce, value: triggerCount)
+            }
+        }
+        .foregroundStyle(foregroundStyle)
+        .opacity(isHovering ? 1.0 : 0.88)
+
+        if isCircular {
+            content
+                .frame(width: circleSize, height: circleSize)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                .contentShape(Circle())
+        } else {
+            content
+                .contentShape(Rectangle())
+        }
+    }
+
     private func triggerAnimation() {
-        triggerCount += 1
+        triggerCount &+= 1
 
         if direction == .forward || direction == .backward {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
+            // 单调平滑三次贝塞尔曲线：0 越界、0 频闪、完全单调流体推进
+            withAnimation(.timingCurve(0.22, 0.0, 0.0, 1.0, duration: 0.28)) {
                 conveyorProgress += 1.0
             }
         }

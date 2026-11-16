@@ -21,7 +21,29 @@ struct PlayHistoryItem: Identifiable, Codable, Equatable, Hashable {
         self.playCount = playCount
     }
 
+    @MainActor
+    private static let timeFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "HH:mm"
+        return df
+    }()
+
+    @MainActor
+    private static let monthDayFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "MM-dd HH:mm"
+        return df
+    }()
+
+    @MainActor
+    private static let fullFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        return df
+    }()
+
     /// 相对播放时间展示，例如“刚刚”、“15分钟前”、“今天 14:30”、“昨天 09:12”、“11-04 12:00”
+    @MainActor
     var relativeTimeText: String {
         let now = Date()
         let interval = now.timeIntervalSince(playedAt)
@@ -34,22 +56,16 @@ struct PlayHistoryItem: Identifiable, Codable, Equatable, Hashable {
         }
 
         let calendar = Calendar.current
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm"
-        let timeString = timeFormatter.string(from: playedAt)
+        let timeString = Self.timeFormatter.string(from: playedAt)
 
         if calendar.isDateInToday(playedAt) {
             return "今天 %@".localized(with: timeString)
         } else if calendar.isDateInYesterday(playedAt) {
             return "昨天 %@".localized(with: timeString)
         } else if calendar.isDate(playedAt, equalTo: now, toGranularity: .year) {
-            let monthDayFormatter = DateFormatter()
-            monthDayFormatter.dateFormat = "MM-dd HH:mm"
-            return monthDayFormatter.string(from: playedAt)
+            return Self.monthDayFormatter.string(from: playedAt)
         } else {
-            let fullFormatter = DateFormatter()
-            fullFormatter.dateFormat = "yyyy-MM-dd"
-            return fullFormatter.string(from: playedAt)
+            return Self.fullFormatter.string(from: playedAt)
         }
     }
 

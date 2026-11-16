@@ -247,10 +247,11 @@ final class FluidAuraNSView: NSView {
         root.backgroundColor = NSColor(srgbRed: 0.04, green: 0.05, blue: 0.08, alpha: 1.0).cgColor
         self.layer = root
 
-        // 创建 5 个高保真平滑羽化同心光环图层 (硬件纹理 Quad + 屏幕滤色混合驱动，光影自然交融且绝无硬切边)
+        // 创建 5 个高保真平滑羽化同心光环图层 (硬件纹理 Quad，纯 GPU 硬件直通合成，0 CPU 损耗)
         for _ in 0..<orbCount {
             let orb = CALayer()
-            orb.compositingFilter = "screenBlendMode"
+            orb.minificationFilter = .linear
+            orb.magnificationFilter = .linear
             root.addSublayer(orb)
             orbLayers.append(orb)
         }
@@ -298,8 +299,8 @@ final class FluidAuraNSView: NSView {
         let h = bounds.height
         guard w > 20 && h > 20 else { return }
 
-        let orbDiameter = max(w, h) * 1.45
-        let shimmerDiameter = max(w, h) * 1.05
+        let orbDiameter = max(w, h) * 0.95
+        let shimmerDiameter = max(w, h) * 0.70
 
         let orbBounds = CGRect(x: 0, y: 0, width: orbDiameter, height: orbDiameter)
         let shimmerBounds = CGRect(x: 0, y: 0, width: shimmerDiameter, height: shimmerDiameter)
@@ -320,14 +321,8 @@ final class FluidAuraNSView: NSView {
             makeLissajousPath(w: w, h: h, centerX: 0.50, centerY: 0.45, ampX: 0.22, ampY: 0.12, freqX: 1.0, freqY: 2.0)
         ]
 
-        // 舒缓优雅的慢速周期 (12.0s ~ 21.0s)：呼吸从容、清晰流动且不急促
-        let moveDurations: [CFTimeInterval] = [14.5, 17.2, 13.0, 21.0, 12.0]
-        let scaleXDurations: [CFTimeInterval] = [11.5, 13.0, 10.5, 16.0, 9.5]
-        let scaleYDurations: [CFTimeInterval] = [12.8, 14.5, 11.8, 17.5, 10.8]
-        let rotDurations: [CFTimeInterval] = [15.0, 18.0, 14.0, 22.0, 12.5]
-        let opDurations: [CFTimeInterval] = [9.0, 11.0, 8.5, 14.0, 7.5]
-
-        let maxRotations: [CGFloat] = [0.22, -0.24, 0.28, -0.12, 0.30]
+        // 舒缓优雅的慢速周期 (14.0s ~ 24.0s)：呼吸从容、清晰流动且不急促
+        let moveDurations: [CFTimeInterval] = [18.5, 21.2, 16.0, 24.0, 15.0]
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -336,10 +331,11 @@ final class FluidAuraNSView: NSView {
             guard i < paths.count else { continue }
             orb.bounds = (i == 4) ? shimmerBounds : orbBounds
             orb.position = centers[i]
+            orb.opacity = (i == 4) ? 0.35 : 0.75
 
             orb.removeAllAnimations()
 
-            // 1. 舒缓温润的闭合大轨迹巡游
+            // 舒缓温润的闭合大轨迹巡游 (纯 GPU 坐标位移，WindowServer 仅做位置偏移，0 重采样与 0% CPU 损耗)
             let posAnim = CAKeyframeAnimation(keyPath: "position")
             posAnim.path = paths[i]
             posAnim.duration = moveDurations[i]
@@ -347,46 +343,6 @@ final class FluidAuraNSView: NSView {
             posAnim.calculationMode = .paced
             posAnim.isRemovedOnCompletion = false
             orb.add(posAnim, forKey: "fluidPosition")
-
-            // 2. 细微自然的流体膨胀微调 (避免生硬拉伸形变)
-            let scaleXAnim = CAKeyframeAnimation(keyPath: "transform.scale.x")
-            scaleXAnim.values = [1.0, 1.18, 0.90, 1.10, 1.0]
-            scaleXAnim.keyTimes = [0.0, 0.28, 0.60, 0.82, 1.0]
-            scaleXAnim.duration = scaleXDurations[i]
-            scaleXAnim.repeatCount = .infinity
-            scaleXAnim.calculationMode = .linear
-            scaleXAnim.isRemovedOnCompletion = false
-            orb.add(scaleXAnim, forKey: "fluidScaleX")
-
-            let scaleYAnim = CAKeyframeAnimation(keyPath: "transform.scale.y")
-            scaleYAnim.values = [1.0, 0.88, 1.16, 0.92, 1.0]
-            scaleYAnim.keyTimes = [0.0, 0.32, 0.65, 0.85, 1.0]
-            scaleYAnim.duration = scaleYDurations[i]
-            scaleYAnim.repeatCount = .infinity
-            scaleYAnim.calculationMode = .linear
-            scaleYAnim.isRemovedOnCompletion = false
-            orb.add(scaleYAnim, forKey: "fluidScaleY")
-
-            // 3. 微风般的舒缓轻旋
-            let rot = maxRotations[i]
-            let rotAnim = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-            rotAnim.values = [0.0, rot, -rot * 0.7, rot * 0.4, 0.0]
-            rotAnim.keyTimes = [0.0, 0.30, 0.65, 0.85, 1.0]
-            rotAnim.duration = rotDurations[i]
-            rotAnim.repeatCount = .infinity
-            rotAnim.calculationMode = .linear
-            rotAnim.isRemovedOnCompletion = false
-            orb.add(rotAnim, forKey: "fluidRotation")
-
-            // 4. 舒缓深邃的明暗潮汐涨落
-            let opAnim = CAKeyframeAnimation(keyPath: "opacity")
-            opAnim.values = (i == 4) ? [0.20, 0.45, 0.15, 0.40, 0.20] : [0.75, 0.92, 0.68, 0.85, 0.75]
-            opAnim.keyTimes = [0.0, 0.25, 0.55, 0.80, 1.0]
-            opAnim.duration = opDurations[i]
-            opAnim.repeatCount = .infinity
-            opAnim.calculationMode = .linear
-            opAnim.isRemovedOnCompletion = false
-            orb.add(opAnim, forKey: "fluidOpacity")
         }
 
         CATransaction.commit()

@@ -55,10 +55,10 @@ final class NowPlayingService {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    /// 异步预生成高斯模糊背景小图 (140x140，单次 GPU 耗时 < 1.5ms，消除全屏实时大模糊滤镜性能损耗)
+    /// 异步预生成高斯模糊背景小图 (140x140，基于 CGImage 硬件直读，消除 TIFF 格式转换与大内存分配)
     nonisolated static func generateBlurredArtwork(from image: NSImage) -> NSImage? {
-        guard let tiffData = image.tiffRepresentation,
-              let ciImage = CIImage(data: tiffData) else { return nil }
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let ciImage = CIImage(cgImage: cg)
 
         let extent = ciImage.extent
         guard extent.width > 0 && extent.height > 0 else { return nil }

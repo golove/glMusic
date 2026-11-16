@@ -43,8 +43,8 @@ struct PlaylistDetailView: View {
                 } else {
                     // Direct LazyVStack for optimal SwiftUI viewport virtualization
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
-                            UnifiedSongRow(song: song, index: idx + 1, allSongs: songs)
+                        ForEach(songs.indexed()) { item in
+                            UnifiedSongRow(song: item.element, index: item.index + 1, allSongs: songs)
                         }
                     }
                     .padding(.bottom, 80)
@@ -62,6 +62,7 @@ struct PlaylistDetailView: View {
                              
                                     headerSection
                                     .padding(.top, 12)
+                                    .padding(.trailing, 24)
                                
                             }
                             // Column headers

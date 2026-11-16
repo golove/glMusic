@@ -89,7 +89,7 @@ struct NightBokehBackground: View {
                     endPoint: .center
                 )
 
-                // 3. 散落的夜景多重散景光斑（静态渲染，0 CPU 损耗）
+                // 3. 散落的夜景多重散景光斑（Metal 离屏硬件加速光栅化，0 CPU 损耗）
                 ZStack {
                     ForEach(spots) { spot in
                         let color = colorFor(type: spot.colorType)
@@ -99,6 +99,7 @@ struct NightBokehBackground: View {
                             .position(centerPos)
                     }
                 }
+                .drawingGroup()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

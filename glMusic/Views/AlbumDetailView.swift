@@ -49,10 +49,10 @@ struct AlbumDetailView: View {
 
                     // Tracklist
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
+                        ForEach(songs.indexed()) { item in
                             UnifiedSongRow(
-                                song: song,
-                                index: idx + 1,
+                                song: item.element,
+                                index: item.index + 1,
                                 allSongs: songs,
                                 showCover: false,
                                 showAlbum: false,

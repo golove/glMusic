@@ -49,14 +49,14 @@ struct HistoryView: View {
             } else {
                 // 歌曲列表
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                    ForEach(filteredItems.indexed()) { row in
                         HistoryRowView(
-                            item: item,
-                            index: index + 1,
+                            item: row.element,
+                            index: row.index + 1,
                             allSongs: filteredSongs,
                             onRemove: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
-                                    historyManager.remove(item: item)
+                                    historyManager.remove(item: row.element)
                                 }
                             }
                         )
@@ -312,7 +312,7 @@ private struct HistoryRowView: View {
         let isCurrent = player.currentSong?.id == song.id
         let isLiked = player.isLiked(song.id)
         let isDownloaded = DownloadManager.shared.downloadedSongIds.contains(song.id)
-        let isDownloading = DownloadManager.shared.activeDownloads[song.id] != nil || DownloadManager.shared.isWaiting(song.id)
+        let isDownloading = DownloadManager.shared.isDownloading(song.id)
         let showActions = isHovered || isLiked || isDownloaded || isDownloading
 
         HStack(spacing: 0) {

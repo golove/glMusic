@@ -736,7 +736,9 @@ private struct ActiveKaraokeLyricLineView: View {
     let inactiveColor: Color
 
     var body: some View {
-        let lineProgress = line.progress(at: player.currentTime)
+        let offsetSec = LyricsStyleManager.shared.lyricOffsetMs / 1000.0
+        let effectiveTime = max(0, player.currentTime - offsetSec)
+        let lineProgress = line.progress(at: effectiveTime)
         KaraokeLyricLineView(
             text: line.text,
             isActive: true,

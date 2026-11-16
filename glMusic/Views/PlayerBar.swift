@@ -26,20 +26,21 @@ struct PlayerBar: View {
             songInfoSection
                 .fixedSize(horizontal: true, vertical: false)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 16)
 
             // MARK: - Center · Controls + Progress
             controlsSection
+                .frame(minWidth: 260, maxWidth: 520)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 16)
 
             // MARK: - Right · Volume + Extras
             extrasSection
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .frame(height: 42)
+        .frame(height: 44)
         .padding(.horizontal, 18)
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
         .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
@@ -52,7 +53,7 @@ struct PlayerBar: View {
         HStack(spacing: 12) {
             AppleMusicPlaybackButton(
                 systemName: "shuffle",
-                fontSize: 12,
+                fontSize: 13,
                 foregroundStyle: player.isShuffled ? themeManager.accentColor : .secondary,
                 direction: .center
             ) {
@@ -61,7 +62,7 @@ struct PlayerBar: View {
 
             AppleMusicPlaybackButton(
                 systemName: "backward.fill",
-                fontSize: 15,
+                fontSize: 20,
                 foregroundStyle: .primary,
                 direction: .backward
             ) {
@@ -82,7 +83,7 @@ struct PlayerBar: View {
 
             AppleMusicPlaybackButton(
                 systemName: "forward.fill",
-                fontSize: 15,
+                fontSize: 20,
                 foregroundStyle: .primary,
                 direction: .forward
             ) {
@@ -91,7 +92,7 @@ struct PlayerBar: View {
 
             AppleMusicPlaybackButton(
                 systemName: player.repeatMode.systemImage,
-                fontSize: 12,
+                fontSize: 13,
                 foregroundStyle: player.repeatMode.isActive ? themeManager.accentColor : .secondary,
                 direction: .center
             ) {
@@ -103,12 +104,13 @@ struct PlayerBar: View {
     // MARK: - Controls (Center)
 
     private var controlsSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             songHeaderView
-                .frame(height: 38)
-                .padding(.top, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 33)
 
             PlayerProgressSliderView()
+                .frame(height: 7)
         }
         .frame(height: 42)
     }
@@ -122,13 +124,13 @@ struct PlayerBar: View {
                         player.isShowingLyrics.toggle()
                     }
                 } label: {
-                    SongCoverThumbnailView(song: song, size: 38)
-                        .frame(width: 38, height: 38)
+                    SongCoverThumbnailView(song: song, size: 34)
+                        .frame(width: 34, height: 34)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(content: {
                         if isHovering {
                             Image(systemName: "arrow.down.left.and.arrow.up.right")
-                                .font(.system(size: 18))
+                                .font(.system(size: 16))
                                 .foregroundStyle(.white)
                                 .shadow(radius: 2)
                         }
@@ -137,14 +139,14 @@ struct PlayerBar: View {
                 .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovering = h } }
                 .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(song.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .lineLimit(1)
                     ArtistLinksView(
                         artists: song.ar,
                         fallbackText: song.displayArtist,
-                        fontSize: 11,
+                        fontSize: 10.5,
                         weight: .regular,
                         normalColor: .secondary,
                         hoverColor: .primary
@@ -152,6 +154,7 @@ struct PlayerBar: View {
                         navigateToArtist(id: artistId)
                     }
                 }
+                .layoutPriority(1)
 
                 if player.isLoading {
                     ProgressView()
@@ -161,28 +164,16 @@ struct PlayerBar: View {
                 // MARK: - 发烧级音质与 Hi-Res 专属徽标 (Apple Music 风格)
                 AudioQualityBadgeView(compact: true)
 
-                // MARK: - 心动模式 / 无限漫游徽章按键 (直观常驻)
+                // MARK: - 心动模式 / 无限漫游图标按键 (纯净矢量图标，点击开启/关闭)
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         player.toggleInfiniteRoaming()
                     }
                 } label: {
-                    HStack(spacing: 3) {
-                        HeartbeatModeIcon(isActive: player.isInfiniteRoamingEnabled, size: 13)
-                        if player.isInfiniteRoamingEnabled {
-                            Text("心动模式".localized)
-                                .font(.system(size: 9, weight: .semibold))
-                        }
-                    }
-                    .foregroundStyle(player.isInfiniteRoamingEnabled ? themeManager.accentColor : .secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
-                    .background(
-                        player.isInfiniteRoamingEnabled
-                            ? themeManager.accentColor.opacity(0.14)
-                            : Color.white.opacity(0.06),
-                        in: Capsule()
-                    )
+                    HeartbeatModeIcon(isActive: player.isInfiniteRoamingEnabled, size: 15)
+                        .foregroundStyle(player.isInfiniteRoamingEnabled ? themeManager.accentColor : .secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(player.isInfiniteRoamingEnabled ? "心动模式 / 无限漫游已开启 (播完后自动根据当前风格接入相似歌曲)".localized : "开启心动模式 / 相似歌曲无限漫游".localized)
@@ -191,7 +182,7 @@ struct PlayerBar: View {
                     player.toggleLike(for: song)
                 } label: {
                     Image(systemName: player.isLiked(song.id) ? "heart.fill" : "heart")
-                        .font(.system(size: 16))
+                        .font(.system(size: 15))
                         .foregroundStyle(player.isLiked(song.id) ? themeManager.accentColor : .secondary)
                 }
                 .frame(width: 18, height: 18)
@@ -199,22 +190,22 @@ struct PlayerBar: View {
                 .help((player.isLiked(song.id) ? "取消喜欢" : "喜欢这首歌").localized)
 
                 // 下载此歌曲
-                DownloadButton(song: song, iconSize: 16)
+                DownloadButton(song: song, iconSize: 15)
                     .frame(width: 18, height: 18)
 
             } else {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(.quaternary)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 34, height: 34)
                     .overlay(
                         Image(systemName: "music.note")
-                            .font(.system(size: 20))
+                            .font(.system(size: 18))
                             .foregroundStyle(.tertiary)
                     )
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text("未在播放".localized)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -351,6 +342,7 @@ private struct PlayerProgressSliderView: View {
         ProgressSlider(
             value: $player.sliderProgress,
             trackHeight: 3,
+            interactiveHeight: 7,
             commitsOnDragEnd: true,
             onCommit: { fraction in
                 player.seek(byProgress: fraction)
@@ -366,7 +358,7 @@ struct ProgressSlider: View {
     var trackHeight: Double
     var activeColor: Color? = nil
     var inactiveColor: Color? = nil
-    var interactiveHeight: CGFloat = 14
+    var interactiveHeight: CGFloat = 8
     var commitsOnDragEnd: Bool = false
     var onCommit: ((Double) -> Void)? = nil
     @State private var isHovering = false
@@ -377,7 +369,7 @@ struct ProgressSlider: View {
         GeometryReader { geo in
             let w = geo.size.width
             let displayedValue = isDragging && commitsOnDragEnd ? dragValue : value
-            let trackH: CGFloat = (isHovering || isDragging) ? max(trackHeight + 2, 6) : trackHeight
+            let trackH: CGFloat = (isHovering || isDragging) ? max(trackHeight + 1.5, 4.5) : trackHeight
 
             ZStack(alignment: .leading) {
                 Capsule()
@@ -388,7 +380,7 @@ struct ProgressSlider: View {
                     .fill(activeColor ?? Color.primary.opacity(0.85))
                     .frame(width: w > 0 ? max(0, min(w, w * displayedValue)) : 0, height: trackH)
             }
-            .frame(height: geo.size.height)
+            .frame(height: geo.size.height, alignment: .center)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)

@@ -175,7 +175,7 @@ struct MenuBarView: View {
 
                 AppleMusicPlaybackButton(
                     systemName: "backward.fill",
-                    fontSize: 14,
+                    fontSize: 16,
                     foregroundStyle: .primary,
                     direction: .backward
                 ) {
@@ -198,7 +198,7 @@ struct MenuBarView: View {
 
                 AppleMusicPlaybackButton(
                     systemName: "forward.fill",
-                    fontSize: 14,
+                    fontSize: 16,
                     foregroundStyle: .primary,
                     direction: .forward
                 ) {

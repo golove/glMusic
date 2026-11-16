@@ -55,6 +55,14 @@ final class LyricsService: Sendable {
         var lines: [LyricLine] = []
         let linePattern = /\[(\d+),(\d+)\](.*)/
         let wordPattern = /\((\d+),(\d+)(?:,\d+)?\)([^\(\)]*)/
+        let offsetPattern = /(?i)\[offset:\s*([+-]?\d+)\s*\]/
+
+        var fileOffsetSec: Double = 0
+        for rawLine in yrc.components(separatedBy: .newlines) {
+            if let m = rawLine.firstMatch(of: offsetPattern) {
+                fileOffsetSec = (Double(m.1) ?? 0) / 1000.0
+            }
+        }
 
         for rawLine in yrc.components(separatedBy: .newlines) {
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
@@ -64,7 +72,7 @@ final class LyricsService: Sendable {
             let lineDurMs = Double(lineMatch.2) ?? 0
             let lineBody = String(lineMatch.3)
 
-            let lineStartTime = lineStartMs / 1000.0
+            let lineStartTime = max(0, (lineStartMs / 1000.0) + fileOffsetSec)
             let lineDuration = lineDurMs / 1000.0
 
             var words: [LyricWord] = []
@@ -76,7 +84,7 @@ final class LyricsService: Sendable {
                 let wDurMs = Double(wm.2) ?? 0
                 let wText = String(wm.3)
 
-                let wStartTime = wStartMs / 1000.0
+                let wStartTime = max(0, (wStartMs / 1000.0) + fileOffsetSec)
                 let wDuration = wDurMs / 1000.0
 
                 if !wText.isEmpty {
@@ -87,11 +95,20 @@ final class LyricsService: Sendable {
 
             let cleanText = fullText.trimmingCharacters(in: .whitespaces)
             if !cleanText.isEmpty {
+                // 如果整行文本首尾被裁剪了多余空格，对 words 数组首尾纯空格词进行同步裁剪，保证字符索引与打点百分比绝对一致
+                var trimmedWords = words
+                while let first = trimmedWords.first, first.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                    trimmedWords.removeFirst()
+                }
+                while let last = trimmedWords.last, last.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                    trimmedWords.removeLast()
+                }
+
                 lines.append(LyricLine(
                     time: lineStartTime,
                     text: cleanText,
                     duration: lineDuration,
-                    words: words
+                    words: trimmedWords.isEmpty ? words : trimmedWords
                 ))
             }
         }
@@ -107,6 +124,14 @@ final class LyricsService: Sendable {
 
         var lines: [LyricLine] = []
         let pattern = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/
+        let offsetPattern = /(?i)\[offset:\s*([+-]?\d+)\s*\]/
+
+        var fileOffsetSec: Double = 0
+        for rawLine in lrc.components(separatedBy: .newlines) {
+            if let m = rawLine.firstMatch(of: offsetPattern) {
+                fileOffsetSec = (Double(m.1) ?? 0) / 1000.0
+            }
+        }
 
         for rawLine in lrc.components(separatedBy: .newlines) {
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
@@ -115,7 +140,7 @@ final class LyricsService: Sendable {
                 let sec = Double(match.2) ?? 0
                 let msStr = match.3.map(String.init) ?? "0"
                 let ms = (Double(msStr) ?? 0) / (msStr.count == 3 ? 1000.0 : 100.0)
-                let time = min * 60 + sec + ms
+                let time = max(0, min * 60 + sec + ms + fileOffsetSec)
                 let text = String(match.4).trimmingCharacters(in: .whitespaces)
 
                 if !text.isEmpty {

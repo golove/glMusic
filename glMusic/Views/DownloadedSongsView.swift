@@ -97,11 +97,11 @@ struct DownloadedSongsView: View {
                 // Song List
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(filteredSongs.enumerated()), id: \.element.id) { idx, song in
-                            downloadedSongRow(song: song, index: idx + 1)
-                                .onHover { h in hoveredSongId = h ? song.id : nil }
+                        ForEach(filteredSongs.indexed()) { item in
+                            downloadedSongRow(song: item.element, index: item.index + 1)
+                                .onHover { h in hoveredSongId = h ? item.element.id : nil }
                                 .onTapGesture {
-                                    playSong(song)
+                                    playSong(item.element)
                                 }
                         }
                     }

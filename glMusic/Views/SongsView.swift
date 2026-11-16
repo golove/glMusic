@@ -17,8 +17,8 @@ struct SongsView: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
-                        UnifiedSongRow(song: song, index: idx + 1, allSongs: songs)
+                    ForEach(songs.indexed()) { item in
+                        UnifiedSongRow(song: item.element, index: item.index + 1, allSongs: songs)
                     }
                 }
                 .padding(.bottom, 80)

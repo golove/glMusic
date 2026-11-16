@@ -143,21 +143,21 @@ struct QueueView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    ForEach(Array(player.playlist.enumerated()), id: \.element.id) { index, song in
+                    ForEach(player.playlist.indexed()) { item in
                         QueueRowView(
-                            song: song,
-                            index: index,
-                            isHovered: hoveredSongId == song.id,
-                            isDragging: draggingSongId == song.id,
-                            isDropTarget: dropTargetSongId == song.id && draggingSongId != song.id,
-                            onHover: { h in hoveredSongId = h ? song.id : nil },
-                            onDragStarted: { draggingSongId = song.id },
+                            song: item.element,
+                            index: item.index,
+                            isHovered: hoveredSongId == item.element.id,
+                            isDragging: draggingSongId == item.element.id,
+                            isDropTarget: dropTargetSongId == item.element.id && draggingSongId != item.element.id,
+                            onHover: { h in hoveredSongId = h ? item.element.id : nil },
+                            onDragStarted: { draggingSongId = item.element.id },
                             onDragEnded: {
                                 draggingSongId = nil
                                 dropTargetSongId = nil
                             },
                             onDropTargetChanged: { targeted in
-                                dropTargetSongId = targeted ? song.id : nil
+                                dropTargetSongId = targeted ? item.element.id : nil
                             },
                             onReorder: { fromId, toId in
                                 guard let fromIdx = player.playlist.firstIndex(where: { $0.id == fromId }),

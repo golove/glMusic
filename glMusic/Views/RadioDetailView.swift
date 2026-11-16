@@ -46,19 +46,19 @@ struct RadioDetailView: View {
                     } else {
                         // 节目列表
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(programs.enumerated()), id: \.element.id) { idx, prog in
+                            ForEach(programs.indexed()) { item in
                                 RadioProgramRow(
-                                    program: prog,
-                                    index: idx + 1,
-                                    isPlaying: player.currentSong?.id == prog.mainSong?.id,
-                                    isHovered: hoveredProgramId == prog.id,
+                                    program: item.element,
+                                    index: item.index + 1,
+                                    isPlaying: player.currentSong?.id == item.element.mainSong?.id,
+                                    isHovered: hoveredProgramId == item.element.id,
                                     onPlay: {
-                                        playProgram(at: idx)
+                                        playProgram(at: item.index)
                                     }
                                 )
-                                .onHover { h in hoveredProgramId = h ? prog.id : nil }
+                                .onHover { h in hoveredProgramId = h ? item.element.id : nil }
                                 .onTapGesture(count: 2) {
-                                    playProgram(at: idx)
+                                    playProgram(at: item.index)
                                 }
                             }
                         }

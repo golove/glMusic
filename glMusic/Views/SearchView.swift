@@ -210,8 +210,8 @@ struct SearchView: View {
                 // Search results
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(results.enumerated()), id: \.element.id) { idx, song in
-                            UnifiedSongRow(song: song, index: idx + 1, allSongs: results)
+                        ForEach(results.indexed()) { item in
+                            UnifiedSongRow(song: item.element, index: item.index + 1, allSongs: results)
                         }
                     }
                     .padding(.bottom, 80)

@@ -82,4 +82,33 @@ final class LyricsParserTests: XCTestCase {
         // 超过最后一行
         XCTAssertEqual(LyricsService.shared.findLyricIndex(at: 12.0, in: lines, currentIndex: 1), 2)
     }
+
+    func testLrcOffsetParsing() {
+        let lrcContent = """
+        [offset:500]
+        [00:01.00]第一行歌词
+        [00:05.50]第二行歌词
+        """
+
+        let lines = LyricsService.shared.parseLRC(lrc: lrcContent, translation: nil)
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertEqual(lines[0].time, 1.5, accuracy: 0.01)
+        XCTAssertEqual(lines[1].time, 6.0, accuracy: 0.01)
+    }
+
+    func testYrcOffsetParsing() {
+        let yrcContent = """
+        [offset:-200]
+        [1000,3000](1000,500)你(1500,500)好(2000,2000)世界
+        """
+
+        let lines = LyricsService.shared.parseYRC(yrc: yrcContent, translation: nil)
+        XCTAssertEqual(lines.count, 1)
+
+        let line = lines[0]
+        XCTAssertEqual(line.time, 0.8, accuracy: 0.01)
+        XCTAssertEqual(line.words.count, 3)
+        XCTAssertEqual(line.words[0].time, 0.8, accuracy: 0.01)
+        XCTAssertEqual(line.words[1].time, 1.3, accuracy: 0.01)
+    }
 }

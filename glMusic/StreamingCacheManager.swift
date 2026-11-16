@@ -22,7 +22,8 @@ actor StreamingCacheManager {
     private let indexFileURL: URL
     private let maxCacheSizeBytes: Int64 = 1500 * 1024 * 1024 // 默认配额 1.5 GB
     private var records: [Int: CacheRecord] = [:]
-    private var activeCachingTaskIds: Set<Int> = []
+    private var activeCachingTasks: [Int: Task<Void, Never>] = [:]
+    private var saveIndexTask: Task<Void, Never>?
 
     private init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -42,36 +43,62 @@ actor StreamingCacheManager {
         let fileURL = cacheDirectory.appendingPathComponent(record.fileName)
         if FileManager.default.fileExists(atPath: fileURL.path) {
             records[songId]?.lastAccessedAt = Date()
-            saveIndex()
+            scheduleSaveIndex()
             return fileURL
         } else {
             records.removeValue(forKey: songId)
-            saveIndex()
+            scheduleSaveIndex()
             return nil
         }
     }
 
-    /// 触发后台异步缓存任务
+    /// 取消指定歌曲的后台缓存任务
+    func cancelCaching(for songId: Int) {
+        if let task = activeCachingTasks.removeValue(forKey: songId) {
+            task.cancel()
+        }
+    }
+
+    /// 取消所有正在进行的后台缓存任务（可选择保留当前正在播放的歌曲）
+    func cancelAllCaching(except keepingSongId: Int? = nil) {
+        for (id, task) in activeCachingTasks {
+            if id != keepingSongId {
+                task.cancel()
+                activeCachingTasks.removeValue(forKey: id)
+            }
+        }
+    }
+
+    /// 触发后台异步缓存任务 (支持结构化 Task 生命周期与协作式取消)
     func cacheSongIfNeeded(songId: Int, remoteURL: URL) {
         guard songId > 0 else { return }
-        if records[songId] != nil || activeCachingTaskIds.contains(songId) { return }
+        if records[songId] != nil || activeCachingTasks[songId] != nil { return }
 
-        activeCachingTaskIds.insert(songId)
-
-        Task.detached(priority: .utility) { [weak self] in
+        let task = Task<Void, Never>(priority: .utility) { [weak self] in
             guard let self = self else { return }
             await self.downloadAndStore(songId: songId, remoteURL: remoteURL)
         }
+        activeCachingTasks[songId] = task
     }
 
     private func downloadAndStore(songId: Int, remoteURL: URL) async {
         defer {
-            activeCachingTaskIds.remove(songId)
+            activeCachingTasks.removeValue(forKey: songId)
         }
+
+        guard !Task.isCancelled else { return }
 
         do {
             let (tempURL, response) = try await URLSession.shared.download(from: remoteURL)
+
+            // 若任务在下载期间被取消（如切歌），立即删除临时文件并退出，释放 I/O
+            guard !Task.isCancelled else {
+                try? FileManager.default.removeItem(at: tempURL)
+                return
+            }
+
             guard let httpResp = response as? HTTPURLResponse, (200...299).contains(httpResp.statusCode) else {
+                try? FileManager.default.removeItem(at: tempURL)
                 return
             }
 
@@ -84,6 +111,11 @@ actor StreamingCacheManager {
             }
 
             try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+
+            guard !Task.isCancelled else {
+                try? FileManager.default.removeItem(at: destinationURL)
+                return
+            }
 
             let attrs = try? FileManager.default.attributesOfItem(atPath: destinationURL.path)
             let fileSize = (attrs?[.size] as? Int64) ?? 0
@@ -100,10 +132,12 @@ actor StreamingCacheManager {
             #endif
 
             pruneIfNeeded()
-            saveIndex()
+            scheduleSaveIndex()
         } catch {
             #if DEBUG
-            print("⚠️ [glMusic] 在线音频后台缓存失败: \(error)")
+            if !Task.isCancelled {
+                print("⚠️ [glMusic] 在线音频后台缓存失败: \(error)")
+            }
             #endif
         }
     }
@@ -135,12 +169,23 @@ actor StreamingCacheManager {
 
     /// 清空所有流媒体缓存
     func clearAll() {
+        cancelAllCaching()
+        saveIndexTask?.cancel()
         for record in records.values {
             let fileURL = cacheDirectory.appendingPathComponent(record.fileName)
             try? FileManager.default.removeItem(at: fileURL)
         }
         records.removeAll()
         saveIndex()
+    }
+
+    private func scheduleSaveIndex() {
+        saveIndexTask?.cancel()
+        saveIndexTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 秒防抖合并落盘
+            guard !Task.isCancelled, let self = self else { return }
+            await self.saveIndex()
+        }
     }
 
     private func loadIndex() {

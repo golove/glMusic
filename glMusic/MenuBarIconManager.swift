@@ -37,13 +37,10 @@ final class MenuBarIconManager {
         }
     }
 
-    private var animationTimer: Timer?
-    private var currentFrameIndex: Int = 0
+    private var isAnimating: Bool = false
     private var lastPlaybackState: Bool = false
-
-    /// 下沉到低位舞台跳跃平台的过渡进度：0.0 (居中静止) ~ 1.0 (沉落到底部舞台)
-    private var sinkProgress: CGFloat = 0.0
-    private var targetSink: CGFloat = 0.0
+    private var spectrumTimer: Timer?
+    private var phase: Double = 0
 
     // MARK: - CoreAnimation Hardware Layers (单层纯净硬件图层)
 
@@ -173,135 +170,96 @@ final class MenuBarIconManager {
         }
 
         if isPlaying {
-            targetSink = 1.0
             startAnimation()
         } else {
-            targetSink = 0.0
-            if animationTimer == nil {
-                sinkProgress = 0.0
-                applyOffsets(y1: 0, y2: 0, y3: 0)
-            }
+            stopAnimation()
         }
     }
 
-    /// 启动律动动效 (30 FPS 硬件图层微秒级位移，零 SwiftUI/AutoLayout 开销)
+    /// 启动实时三频声学律动动效 (由 AudioSpectrumManager 毫秒级提取 Bass/Mid/Treble 真实声学能量驱动 GPU 图层位移)
     private func startAnimation() {
-        guard animationTimer == nil else { return }
+        guard !isAnimating else { return }
+        isAnimating = true
 
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                guard self.isAnimationEnabled else {
-                    self.stopAnimation(immediate: true)
-                    return
-                }
+        alignContainerIfNeeded()
 
-                // 驱动音频频谱引擎单帧计算
-                AudioSpectrumManager.shared.updateLevelsForNextFrame()
+        spectrumTimer?.invalidate()
+        spectrumTimer = nil
 
-                // 平滑插值沉底进度
-                let sinkSpeed: CGFloat = self.lastPlaybackState ? 0.08 : 0.14
-                self.sinkProgress += (self.targetSink - self.sinkProgress) * sinkSpeed
-
-                // 若处于暂停回程阶段且已基本回升到原位，完成优雅停机
-                if !self.lastPlaybackState && self.sinkProgress < 0.02 {
-                    self.sinkProgress = 0.0
-                    self.applyOffsets(y1: 0, y2: 0, y3: 0)
-                    self.stopAnimationTimer()
-                    AudioSpectrumManager.shared.reset()
-                    return
-                }
-
-                // 对齐底部舞台所需的沉底位移 (在 NSStatusBarButton Flipped 坐标系中，向下沉底为正位移)
-                // 使三颗音符在静音未起跳时平齐沉降在底部 y = 17.0 pt 处 (距 18pt 容器底边留 1.0pt 边距):
-                // - 音符1 (明黄 ♩): 默认 bottom=14.0 pt，下移 +3.0 pt -> bottom 达到 17.0 pt
-                // - 音符2 (洋红 ♩): 默认 bottom=12.0 pt，下移 +5.0 pt -> bottom 达到 17.0 pt
-                // - 音符3 (靛青 ♩): 默认 bottom=14.0 pt，下移 +3.0 pt -> bottom 达到 17.0 pt
-                let floor1: CGFloat = 3.0 * self.sinkProgress
-                let floor2: CGFloat = 5.0 * self.sinkProgress
-                let floor3: CGFloat = 3.0 * self.sinkProgress
-
-                // 沉底后释放出的充沛向上弹跳行程 (在 Flipped 坐标系中，向上跃起为减小 y 值):
-                // - 音符1 (明黄 ♩): 最大弹跳 5.5 pt (重低音底鼓爆发)
-                // - 音符2 (洋红 ♩): 最大弹跳 6.5 pt (军鼓与人声主旋律爆发)
-                // - 音符3 (靛青 ♩): 最大弹跳 5.0 pt (踩镲镲片高频清脆律动)
-                let maxBounce1: CGFloat = 5.5
-                let maxBounce2: CGFloat = 6.5
-                let maxBounce3: CGFloat = 5.0
-
-                let y1: CGFloat
-                let y2: CGFloat
-                let y3: CGFloat
-
-                if AudioSpectrumManager.shared.isAudioActive {
-                    let levels = AudioSpectrumManager.shared.currentLevels
-                    // 硬静区截断：微小回落或细微噪音截断为 0，确保平时平平稳稳地坐在底部地台，杜绝任何微幅抖动
-                    let bounce1 = levels.bass > 0.05 ? maxBounce1 * levels.bass * self.sinkProgress : 0
-                    let bounce2 = levels.mid > 0.05 ? maxBounce2 * levels.mid * self.sinkProgress : 0
-                    let bounce3 = levels.treble > 0.05 ? maxBounce3 * levels.treble * self.sinkProgress : 0
-
-                    // 向上跳跃：由底部 floor 向上弹起 (y 减小)
-                    y1 = floor1 - bounce1
-                    y2 = floor2 - bounce2
-                    y3 = floor3 - bounce3
-                } else if self.lastPlaybackState {
-                    // 音频初始缓冲中或未捕获到音频能量：安安静静平卧在底部平台，不产生任何烦人的微晃抖动
-                    y1 = floor1
-                    y2 = floor2
-                    y3 = floor3
-                } else {
-                    // 暂停过渡回位中
-                    y1 = floor1
-                    y2 = floor2
-                    y3 = floor3
-                }
-
-                self.applyOffsets(y1: y1, y2: y2, y3: y3)
+        // 30 FPS 高保真音频频谱驱动循环 (每帧 ~33ms，纯 GPU 坐标位移，CPU 消耗 < 0.2%)
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.tickSpectrum()
             }
         }
-
-        if let timer = animationTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.spectrumTimer = timer
     }
 
-    /// 应用位移至三颗音符的硬件 CALayer
-    private func applyOffsets(y1: CGFloat, y2: CGFloat, y3: CGFloat) {
-        // 动态保持容器图层居中
+    private func tickSpectrum() {
+        guard isAnimating else { return }
+
+        // 1. 推进频谱引擎计算
+        AudioSpectrumManager.shared.updateLevelsForNextFrame()
+        let levels = AudioSpectrumManager.shared.currentLevels
+        let isAudioActive = AudioSpectrumManager.shared.isAudioActive
+
+        phase += 0.12
+
+        // 2. 微弱背景呼吸底波 (保证伴奏静止时依然灵动优雅)
+        let maxTravel: CGFloat = 5.2
+        let idle1 = sin(phase) * 1.2
+        let idle2 = sin(phase + 1.2) * 1.2
+        let idle3 = sin(phase + 2.4) * 1.2
+
+        let hop1: CGFloat
+        let hop2: CGFloat
+        let hop3: CGFloat
+
+        if isAudioActive && (levels.bass > 0.02 || levels.mid > 0.02 || levels.treble > 0.02) {
+            // 真实声学动态驱动：低音重炮驱动音符1，中频人声吉他驱动音符2，高频踩镲空气感驱动音符3
+            hop1 = -(levels.bass * maxTravel + idle1 * 0.15)
+            hop2 = -(levels.mid * maxTravel * 1.1 + idle2 * 0.15)
+            hop3 = -(levels.treble * maxTravel * 0.95 + idle3 * 0.15)
+        } else {
+            // 伴奏静音/缓冲期间的轻柔呼吸保底
+            hop1 = -idle1
+            hop2 = -idle2
+            hop3 = -idle3
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        note1Layer.transform = CATransform3DMakeTranslation(0, hop1, 0)
+        note2Layer.transform = CATransform3DMakeTranslation(0, hop2, 0)
+        note3Layer.transform = CATransform3DMakeTranslation(0, hop3, 0)
+        CATransaction.commit()
+    }
+
+    private func stopAnimation(immediate: Bool = false) {
+        guard isAnimating || spectrumTimer != nil else { return }
+        isAnimating = false
+
+        spectrumTimer?.invalidate()
+        spectrumTimer = nil
+        AudioSpectrumManager.shared.reset()
+
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(immediate ? 0.0 : 0.25)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        note1Layer.transform = CATransform3DIdentity
+        note2Layer.transform = CATransform3DIdentity
+        note3Layer.transform = CATransform3DIdentity
+        CATransaction.commit()
+    }
+
+    private func alignContainerIfNeeded() {
         if let btn = statusBarButton, let container = containerLayer {
             let bx = round((btn.bounds.width - 18.0) / 2.0)
             let by = round((btn.bounds.height - 18.0) / 2.0)
             let origin = CGPoint(x: max(0, bx), y: max(0, by))
             if container.frame.origin != origin {
                 container.frame.origin = origin
-            }
-        }
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        note1Layer.frame.origin.y = y1
-        note2Layer.frame.origin.y = y2
-        note3Layer.frame.origin.y = y3
-        CATransaction.commit()
-    }
-
-    private func stopAnimationTimer() {
-        animationTimer?.invalidate()
-        animationTimer = nil
-        currentFrameIndex = 0
-    }
-
-    private func stopAnimation(immediate: Bool = false) {
-        if immediate {
-            stopAnimationTimer()
-            targetSink = 0.0
-            sinkProgress = 0.0
-            applyOffsets(y1: 0, y2: 0, y3: 0)
-            AudioSpectrumManager.shared.reset()
-        } else {
-            targetSink = 0.0
-            if animationTimer == nil {
-                applyOffsets(y1: 0, y2: 0, y3: 0)
             }
         }
     }

@@ -36,13 +36,13 @@ struct CustomPlaylistDetailView: View {
                         emptyStateView
                     } else {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(pl.songs.enumerated()), id: \.element.id) { idx, song in
+                            ForEach(pl.songs.indexed()) { item in
                                 UnifiedSongRow(
-                                    song: song,
-                                    index: idx + 1,
+                                    song: item.element,
+                                    index: item.index + 1,
                                     allSongs: pl.songs,
                                     onDeleteFromPlaylist: {
-                                        playlistManager.removeSong(songId: song.id, fromPlaylistId: playlistId)
+                                        playlistManager.removeSong(songId: item.element.id, fromPlaylistId: playlistId)
                                     }
                                 )
                             }
@@ -72,6 +72,7 @@ struct CustomPlaylistDetailView: View {
                             if let pl = playlist {
                                 headerSection(pl)
                                     .padding(.top, 12)
+                                    .padding(.trailing, 24)
                             }
                         }
 

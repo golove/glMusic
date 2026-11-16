@@ -36,3 +36,39 @@ enum SideBar {
         ]),
     ]
 }
+
+// MARK: - Zero-Allocation RandomAccess Indexed Collection
+// 零堆内存分配的轻量索引虚拟集合：消除 ForEach(Array(collection.enumerated())) 造成的频繁堆数组分配与 GC 压力
+
+struct IndexedCollection<Base: RandomAccessCollection>: RandomAccessCollection {
+    typealias Index = Base.Index
+    typealias Element = IndexedElement<Base.Element>
+
+    let base: Base
+
+    var startIndex: Index { base.startIndex }
+    var endIndex: Index { base.endIndex }
+
+    func index(after i: Index) -> Index { base.index(after: i) }
+    func index(before i: Index) -> Index { base.index(before: i) }
+
+    subscript(position: Index) -> Element {
+        let offset = base.distance(from: base.startIndex, to: position)
+        return IndexedElement(index: offset, element: base[position])
+    }
+}
+
+struct IndexedElement<Element> {
+    let index: Int
+    let element: Element
+}
+
+extension IndexedElement: Identifiable where Element: Identifiable {
+    var id: Element.ID { element.id }
+}
+
+extension RandomAccessCollection {
+    func indexed() -> IndexedCollection<Self> {
+        IndexedCollection(base: self)
+    }
+}

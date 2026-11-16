@@ -87,10 +87,17 @@ final class DownloadManager: NSObject {
     }
     /// 内存缓存已下载 ID 集合，加速 isDownloaded 频繁查询 (O(1) 替代文件系统 I/O)
     private(set) var downloadedSongIds: Set<Int> = []
+    /// 独立内存缓存正在排队与正在下载的歌曲 ID 集合
+    /// 仅在任务开始、入队、完成、失败或取消时变迁，绝不在高频网络数据包 tick 时变迁，
+    /// 彻底消除列表视图因下载进度更新引发的全局重绘风暴。
+    private(set) var downloadingSongIds: Set<Int> = []
+
     var activeDownloads: [Int: Double] = [:]       // songId -> progress (0.0 ... 1.0)
     var downloadErrors: [Int: String] = [:]       // songId -> errorMessage
     var isImporting: Bool = false
     var importStatusMessage: String? = nil
+
+    private var lastProgressReportTime: [Int: TimeInterval] = [:]
 
     var localImportedCount: Int {
         downloadedSongs.filter(\.isLocal).count
@@ -148,12 +155,20 @@ final class DownloadManager: NSObject {
         downloadedSongIds.contains(songId)
     }
 
+    /// 查询歌曲是否正在排队或下载中 (O(1) 离散状态查询，杜绝订阅 activeDownloads 引发全列表高频重绘)
     func isDownloading(_ songId: Int) -> Bool {
-        activeDownloads[songId] != nil || isWaiting(songId)
+        downloadingSongIds.contains(songId)
     }
 
     func isWaiting(_ songId: Int) -> Bool {
         waitingSongIds.contains(songId)
+    }
+
+    private func updateDownloadingSongIds() {
+        let combined = waitingSongIds.union(activeSongIds)
+        if downloadingSongIds != combined {
+            downloadingSongIds = combined
+        }
     }
 
     func downloadProgress(_ songId: Int) -> Double? {
@@ -218,6 +233,7 @@ final class DownloadManager: NSObject {
         if !waitingSongIds.contains(song.id) {
             waitingQueue.append(song)
             waitingSongIds.insert(song.id)
+            updateDownloadingSongIds()
         }
         processQueue()
     }
@@ -232,6 +248,7 @@ final class DownloadManager: NSObject {
                 waitingSongIds.insert(song.id)
             }
         }
+        updateDownloadingSongIds()
         processQueue()
     }
 
@@ -240,6 +257,7 @@ final class DownloadManager: NSObject {
             let song = waitingQueue.removeFirst()
             waitingSongIds.remove(song.id)
             activeSongIds.insert(song.id)
+            updateDownloadingSongIds()
 
             self.activeDownloads[song.id] = 0.02
             self.downloadErrors.removeValue(forKey: song.id)
@@ -251,7 +269,9 @@ final class DownloadManager: NSObject {
     }
 
     private func finishActiveTask(for songId: Int) {
+        lastProgressReportTime.removeValue(forKey: songId)
         guard activeSongIds.remove(songId) != nil else { return }
+        updateDownloadingSongIds()
         pendingItems.removeValue(forKey: songId)
         downloadTasks.removeValue(forKey: songId)
         processQueue()
@@ -348,6 +368,8 @@ final class DownloadManager: NSObject {
     func cancelDownload(_ songId: Int) {
         waitingQueue.removeAll(where: { $0.id == songId })
         waitingSongIds.remove(songId)
+        updateDownloadingSongIds()
+        lastProgressReportTime.removeValue(forKey: songId)
 
         let task = downloadTasks.removeValue(forKey: songId)
         pendingItems.removeValue(forKey: songId)
@@ -890,7 +912,15 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
         Task { @MainActor [weak self] in
             guard let self = self, self.activeSongIds.contains(songId) else { return }
-            self.activeDownloads[songId] = progress
+            let oldProg = self.activeDownloads[songId] ?? 0
+            let now = CACurrentMediaTime()
+            let lastTime = self.lastProgressReportTime[songId] ?? 0
+
+            // 节流门阀：进度至少变迁 2% 或时间间隔超过 200ms 才更新字典，消除每秒数十次网络数据包引发的无效主线程重绘
+            if abs(progress - oldProg) >= 0.02 || (now - lastTime) >= 0.20 || progress >= 0.98 {
+                self.lastProgressReportTime[songId] = now
+                self.activeDownloads[songId] = progress
+            }
         }
     }
 

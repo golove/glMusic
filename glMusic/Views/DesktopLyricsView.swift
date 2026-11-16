@@ -160,7 +160,7 @@ struct DesktopLyricsView: View {
             // 快捷播控
             AppleMusicPlaybackButton(
                 systemName: "backward.fill",
-                fontSize: 11,
+                fontSize: 13,
                 foregroundStyle: .white,
                 direction: .backward
             ) {
@@ -169,7 +169,7 @@ struct DesktopLyricsView: View {
 
             AppleMusicPlaybackButton(
                 systemName: player.isPlaying ? "pause.fill" : "play.fill",
-                fontSize: 13,
+                fontSize: 15,
                 foregroundStyle: themeManager.accentColor,
                 direction: .center,
                 isMorphing: true
@@ -181,7 +181,7 @@ struct DesktopLyricsView: View {
 
             AppleMusicPlaybackButton(
                 systemName: "forward.fill",
-                fontSize: 11,
+                fontSize: 13,
                 foregroundStyle: .white,
                 direction: .forward
             ) {
@@ -256,6 +256,7 @@ struct DesktopLyricsView: View {
 private struct DesktopLyricsDisplayArea: View {
     @Environment(PlayerManager.self) private var player
     @Environment(ThemeManager.self) private var themeManager
+    private var styleManager = LyricsStyleManager.shared
     var manager: DesktopLyricsManager
 
     private var currentLyric: LyricLine? {
@@ -277,13 +278,22 @@ private struct DesktopLyricsDisplayArea: View {
         VStack(spacing: 3) {
             if let current = currentLyric {
                 // 第一行：当前歌词 (单层渐变染色，100% 避免错位与双层阴影)
-                DesktopKaraokeLine(
-                    line: current,
-                    fontSize: manager.fontSize,
-                    backgroundStyle: manager.backgroundStyle
-                )
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .center)
+                if styleManager.animationMode == .karaoke {
+                    DesktopKaraokeLine(
+                        line: current,
+                        fontSize: manager.fontSize,
+                        backgroundStyle: manager.backgroundStyle
+                    )
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    Text(current.text)
+                        .font(.system(size: manager.fontSize, weight: .heavy))
+                        .foregroundStyle(themeManager.accentColor)
+                        .shadow(color: manager.backgroundStyle == .light ? .clear : .black.opacity(0.95), radius: 3, x: 0, y: 1)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
 
                 // 第二行：译文或下一行预告
                 if manager.showTranslation, let trans = current.translation, !trans.isEmpty {
@@ -333,7 +343,9 @@ private struct DesktopKaraokeLine: View {
     let backgroundStyle: DesktopLyricsBackgroundStyle
 
     var body: some View {
-        let progress = line.progress(at: player.currentTime)
+        let offsetSec = LyricsStyleManager.shared.lyricOffsetMs / 1000.0
+        let effectiveTime = max(0, player.currentTime - offsetSec)
+        let progress = line.progress(at: effectiveTime)
 
         let baseColor: Color = backgroundStyle == .light ? Color.black.opacity(0.8) : Color.white.opacity(0.85)
 
@@ -354,7 +366,8 @@ private struct DesktopKaraokeLine: View {
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
                             Rectangle()
-                                .frame(width: geo.size.width * safeProgress)
+                                .frame(width: max(0, geo.size.width * safeProgress))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         }
                     }
             }

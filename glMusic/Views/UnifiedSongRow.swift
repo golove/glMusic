@@ -31,7 +31,7 @@ struct UnifiedSongRow: View {
         let isCurrent = player.currentSong?.id == song.id
         let isLiked = player.isLiked(song.id)
         let isDownloaded = DownloadManager.shared.downloadedSongIds.contains(song.id)
-        let isDownloading = DownloadManager.shared.activeDownloads[song.id] != nil || DownloadManager.shared.isWaiting(song.id)
+        let isDownloading = DownloadManager.shared.isDownloading(song.id)
         let showActions = isHovered || isLiked || isDownloaded || isDownloading
 
         HStack(spacing: 0) {

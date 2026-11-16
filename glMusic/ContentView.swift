@@ -37,7 +37,7 @@ struct ContentView: View {
                     // 悬浮胶囊播放栏 (在全屏歌词或私人 FM 独立沉浸界面下隐藏，避免控件重复与视觉违和)
                     if !player.isShowingLyrics && selection != "personalFm" {
                         PlayerBar(selection: $selection)
-                            .padding(.horizontal, 130)
+                            .padding(.horizontal, 48)
                             .padding(.bottom, 16)
                             .zIndex(99)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -62,11 +62,12 @@ struct ContentView: View {
             // 全局快捷键处理 (隐藏按钮)
             keyboardShortcuts
         }
-        .frame(minWidth: 1280,minHeight: 720)
+        .frame(minWidth: 1080,minHeight: 620)
         .background(WindowToolbarAccessor())
         .animation(.easeInOut(duration: 0.35), value: player.isShowingLyrics)
         .animation(.easeInOut(duration: 0.25), value: selection == "personalFm")
         .onChange(of: selection) { oldValue, newValue in
+            player.updateTimeObserverFrequencyIfNeeded()
             guard !isNavigatingBack else { return }
             if let old = oldValue, old != newValue {
                 let topLevelItems: Set<String> = ["home", "daily", "playlistSquare", "browse", "radio", "search", "history", "artists", "albums", "songs", "downloaded"]
@@ -94,8 +95,11 @@ struct ContentView: View {
 
     // MARK: - Ambient Theme Background
 
+    @ViewBuilder
     private var contentThemeBackground: some View {
-        NightBokehBackground()
+        if !player.isShowingLyrics {
+            NightBokehBackground()
+        }
     }
 
     // MARK: - Navigation

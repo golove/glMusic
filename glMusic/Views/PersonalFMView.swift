@@ -15,18 +15,8 @@ struct PersonalFMView: View {
 
     @State private var showTrashToast = false
     @State private var trashToastText = ""
-    @State private var lastVolume: Double = 0.5
-
-    private var volumeIcon: String {
-        if player.volume == 0   { return "speaker.slash.fill" }
-        if player.volume < 0.33 { return "speaker.wave.1.fill" }
-        if player.volume < 0.66 { return "speaker.wave.2.fill" }
-        return "speaker.wave.3.fill"
-    }
 
     var body: some View {
-        @Bindable var player = player
-
         ZStack {
             // 背景沉浸渐变
             LinearGradient(
@@ -48,11 +38,7 @@ struct PersonalFMView: View {
                             Text("私人 FM".localized)
                                 .font(.system(size: 28, weight: .bold))
 
-                            if player.isPersonalFM && player.isPlaying {
-                                Image(systemName: "dot.radiowaves.left.and.right")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(themeManager.accentColor)
-                            }
+                            FMHeaderWavesView()
                         }
 
                         Text("根据你的喜好持续探索无限音乐流 · 永不停止".localized)
@@ -70,179 +56,111 @@ struct PersonalFMView: View {
                 if let current = player.currentSong {
                     // 唱片与封面主体 (纯 GPU 硬件渲染动效，0% CPU 开销)
                     HStack(spacing: 48) {
-                        FMVinylRecordView(song: current, isPlaying: player.isPlaying)
+                        FMVinylRecordView(song: current)
 
-                        // 歌曲详情与自包含控制 (因底部播放条已隐藏，此处提供完整掌控)
-                        VStack(alignment: .leading, spacing: 18) {
+                        // 歌曲详情与自包含控制 (高度严格固定锁定，切歌控件 0 移位 0 跳动)
+                        VStack(alignment: .leading, spacing: 14) {
+                            // 1. 歌曲标题与歌手专辑 (固定 56pt 高度)
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(current.name)
                                     .font(.system(size: 26, weight: .bold))
-                                    .lineLimit(2)
+                                    .lineLimit(1)
 
-                                ArtistLinksView(
-                                    artists: current.ar,
-                                    fallbackText: current.displayArtist,
-                                    fontSize: 15,
-                                    weight: .medium,
-                                    normalColor: .secondary,
-                                    hoverColor: .primary
-                                ) { artistId in
-                                    selection = "artist_\(artistId)"
-                                }
-
-                                if !current.displayAlbum.isEmpty {
-                                    Text(current.displayAlbum)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-
-                            // 音质规格徽标
-                            AudioQualityBadgeView(compact: false)
-
-                            // 歌词预览片段
-                            if !player.lyrics.isEmpty && player.currentLyricIndex < player.lyrics.count {
-                                Text(player.lyrics[player.currentLyricIndex].text)
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(themeManager.accentColor)
-                                    .lineLimit(2)
-                                    .animation(.smooth(duration: 0.25), value: player.currentLyricIndex)
-                                    .frame(maxWidth: 400, alignment: .leading)
-                                    .padding(.vertical, 2)
-                            }
-
-                            // 播放进度滑块与时间 (完全自包含，无 PlayerBar 时体验一致)
-                            VStack(spacing: 6) {
-                                ProgressSlider(
-                                    value: $player.sliderProgress,
-                                    trackHeight: 4,
-                                    activeColor: themeManager.accentColor,
-                                    commitsOnDragEnd: true,
-                                    onCommit: { fraction in
-                                        player.seek(byProgress: fraction)
+                                HStack(spacing: 8) {
+                                    ArtistLinksView(
+                                        artists: current.ar,
+                                        fallbackText: current.displayArtist,
+                                        fontSize: 14,
+                                        weight: .medium,
+                                        normalColor: .secondary,
+                                        hoverColor: .primary
+                                    ) { artistId in
+                                        selection = "artist_\(artistId)"
                                     }
-                                )
 
-                                HStack {
-                                    Text(player.currentTimeText)
-                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text(player.remainingTimeText)
-                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(.secondary)
+                                    if !current.displayAlbum.isEmpty {
+                                        Text("·")
+                                            .foregroundStyle(.tertiary)
+                                        Text(current.displayAlbum)
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    }
                                 }
                             }
-                            .frame(maxWidth: 400)
+                            .frame(height: 56, alignment: .leading)
 
-                            // 核心播放与音量控制栏
-                            HStack(spacing: 16) {
-                                // 垃圾桶（不再推荐）
+                            // 2. 音质规格徽标 (固定 24pt 高度)
+                            AudioQualityBadgeView(compact: false)
+                                .frame(height: 24, alignment: .leading)
+
+                            // 3. 歌词预览片段 (固定 24pt 高度，占位保高，杜绝切歌塌陷导致跳动)
+                            FMLyricsPreviewView()
+
+                            // 4. 播放进度滑块与时间 (缩减十分之一至 360pt)
+                            FMProgressSectionView()
+                                .frame(width: 360, height: 34, alignment: .leading)
+
+                            // 5. 核心播放控制栏 (严格 360pt 宽度与上方进度条完全对齐，居中播放三键，两端对齐垃圾桶与红心)
+                            HStack(spacing: 0) {
+                                // 垃圾桶（不再推荐，与进度条左端严格对齐）
                                 Button {
                                     handleTrash()
                                 } label: {
                                     Image(systemName: "trash")
                                         .font(.system(size: 16))
                                         .foregroundStyle(.secondary)
-                                        .frame(width: 42, height: 42)
+                                        .frame(width: 44, height: 44)
                                         .background(.ultraThinMaterial, in: Circle())
                                         .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
                                 .help("不喜欢并从私人 FM 移除（不再推荐）".localized)
 
-                                // 上一首 (或回到开头)
-                                Button {
-                                    player.previous()
-                                } label: {
-                                    Image(systemName: "backward.fill")
-                                        .font(.system(size: 16))
-                                        .foregroundStyle(.primary)
-                                        .frame(width: 42, height: 42)
-                                        .background(.ultraThinMaterial, in: Circle())
-                                        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                                }
-                                .buttonStyle(.plain)
-                                .help("上一首 / 重新播放".localized)
+                                Spacer()
 
-                                // 播放 / 暂停
-                                Button {
-                                    if player.isPersonalFM {
-                                        player.togglePlay()
-                                    } else {
-                                        player.startPersonalFM()
+                                // 中间播放控制（上一首、播放/暂停、下一首，居于进度条正中央）
+                                HStack(spacing: 16) {
+                                    // 上一首 (或回到开头)
+                                    AppleMusicPlaybackButton(
+                                        systemName: "backward.fill",
+                                        fontSize: 18,
+                                        foregroundStyle: .primary,
+                                        direction: .backward,
+                                        isCircular: true,
+                                        circleSize: 44
+                                    ) {
+                                        player.previous()
                                     }
-                                } label: {
-                                    Image(systemName: (player.isPersonalFM && player.isPlaying) ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 22, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 52, height: 52)
-                                        .background(themeManager.accentColor, in: Circle())
-                                        .shadow(color: themeManager.accentColor.opacity(0.4), radius: 8, y: 3)
-                                }
-                                .buttonStyle(.plain)
-                                .help((player.isPlaying ? "暂停" : "播放").localized)
+                                    .help("上一首 / 重新播放".localized)
 
-                                // 下一首
-                                Button {
-                                    player.next()
-                                } label: {
-                                    Image(systemName: "forward.fill")
-                                        .font(.system(size: 18))
-                                        .foregroundStyle(.primary)
-                                        .frame(width: 44, height: 44)
-                                        .background(.ultraThinMaterial, in: Circle())
-                                        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                                }
-                                .buttonStyle(.plain)
-                                .help("下一首".localized)
+                                    // 播放 / 暂停 (独立微视图)
+                                    FMPlayPauseButtonView()
 
-                                // 红心喜欢
-                                Button {
-                                    player.toggleLike(for: current)
-                                } label: {
-                                    Image(systemName: player.isLiked(current.id) ? "heart.fill" : "heart")
-                                        .font(.system(size: 18))
-                                        .foregroundStyle(player.isLiked(current.id) ? themeManager.accentColor : .secondary)
-                                        .frame(width: 42, height: 42)
-                                        .background(.ultraThinMaterial, in: Circle())
-                                        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                                }
-                                .buttonStyle(.plain)
-                                .help((player.isLiked(current.id) ? "取消喜欢" : "喜欢这首歌").localized)
-
-                                Spacer().frame(width: 4)
-
-                                // 音量微调
-                                HStack(spacing: 6) {
-                                    Button {
-                                        if player.volume > 0 {
-                                            lastVolume = player.volume
-                                            player.volume = 0
-                                        } else {
-                                            player.volume = lastVolume > 0 ? lastVolume : 0.5
-                                        }
-                                    } label: {
-                                        Image(systemName: volumeIcon)
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 18)
+                                    // 下一首
+                                    AppleMusicPlaybackButton(
+                                        systemName: "forward.fill",
+                                        fontSize: 18,
+                                        foregroundStyle: .primary,
+                                        direction: .forward,
+                                        isCircular: true,
+                                        circleSize: 44
+                                    ) {
+                                        player.next()
                                     }
-                                    .buttonStyle(.plain)
-                                    .help(player.volume == 0 ? "取消静音".localized : "静音".localized)
-
-                                    ProgressSlider(value: $player.volume, trackHeight: 3)
-                                        .frame(width: 66)
+                                    .help("下一首".localized)
                                 }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(.ultraThinMaterial, in: Capsule())
-                                .overlay(Capsule().stroke(.white.opacity(0.08), lineWidth: 1))
+
+                                Spacer()
+
+                                // 红心喜欢 (与进度条右端严格对齐)
+                                FMLikeButtonView(song: current)
                             }
-                            .padding(.top, 4)
+                            .frame(width: 360, height: 52, alignment: .leading)
                         }
-                        .frame(maxWidth: 420, alignment: .leading)
+                        .frame(width: 360, height: 260, alignment: .leading)
                     }
+                    .frame(height: 260)
                     .padding(.horizontal, 40)
                 } else {
                     VStack(spacing: 20) {
@@ -317,26 +235,211 @@ struct PersonalFMView: View {
     }
 }
 
+// MARK: - Isolated Subviews for Zero-Invalidation Playback (隔离高频刷新，主视图 0 重排)
+
+private struct FMHeaderWavesView: View {
+    @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
+
+    var body: some View {
+        if player.isPersonalFM && player.isPlaying {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(themeManager.accentColor)
+        }
+    }
+}
+
+private struct FMLyricsPreviewView: View {
+    @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
+    @State private var isHovering = false
+
+    var body: some View {
+        Group {
+            if !player.lyrics.isEmpty && player.currentLyricIndex < player.lyrics.count {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        player.isShowingLyrics = true
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "quote.bubble.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(themeManager.accentColor.opacity(0.85))
+
+                        Text(player.lyrics[player.currentLyricIndex].text)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(themeManager.accentColor)
+                            .lineLimit(1)
+                            .underline(isHovering)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hov in
+                    isHovering = hov
+                }
+                .help("点击打开歌词页面".localized)
+                .animation(.smooth(duration: 0.25), value: player.currentLyricIndex)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "quote.bubble")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary.opacity(0.35))
+
+                    Text(player.isLoading ? "歌词载入中...".localized : "私人 FM · 随心探索".localized)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary.opacity(0.55))
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(height: 24, alignment: .leading)
+        .frame(maxWidth: 360, alignment: .leading)
+    }
+}
+
+private struct FMProgressSectionView: View {
+    @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
+
+    var body: some View {
+        @Bindable var player = player
+        VStack(spacing: 6) {
+            ProgressSlider(
+                value: $player.sliderProgress,
+                trackHeight: 4,
+                activeColor: themeManager.accentColor,
+                commitsOnDragEnd: true,
+                onCommit: { fraction in
+                    player.seek(byProgress: fraction)
+                }
+            )
+
+            HStack {
+                Text(player.currentTimeText)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(player.remainingTimeText)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 360)
+    }
+}
+
+private struct FMPlayPauseButtonView: View {
+    @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
+
+    var body: some View {
+        Button {
+            if player.isPersonalFM {
+                player.togglePlay()
+            } else {
+                player.startPersonalFM()
+            }
+        } label: {
+            Image(systemName: (player.isPersonalFM && player.isPlaying) ? "pause.fill" : "play.fill")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(themeManager.accentColor, in: Circle())
+                .shadow(color: themeManager.accentColor.opacity(0.4), radius: 8, y: 3)
+        }
+        .buttonStyle(.plain)
+        .help((player.isPlaying ? "暂停" : "播放").localized)
+    }
+}
+
+private struct FMLikeButtonView: View {
+    @Environment(PlayerManager.self) private var player
+    @Environment(ThemeManager.self) private var themeManager
+    let song: APISong
+
+    var body: some View {
+        let isLiked = player.isLiked(song.id)
+        Button {
+            player.toggleLike(for: song)
+        } label: {
+            Image(systemName: isLiked ? "heart.fill" : "heart")
+                .font(.system(size: 18))
+                .foregroundStyle(isLiked ? themeManager.accentColor : .secondary)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help((isLiked ? "取消喜欢" : "喜欢这首歌").localized)
+    }
+}
+
 // MARK: - FMVinylRecordView (硬件加速黑胶唱片，纯 GPU 渲染，0% CPU 占用)
 
 private struct FMVinylRecordView: View {
     let song: APISong
-    let isPlaying: Bool
+    @Environment(PlayerManager.self) private var player
     @State private var coverImage: NSImage?
     @State private var loadTask: Task<Void, Never>?
+    @State private var isHovering = false
 
     var body: some View {
-        ZStack {
-            // 静态黑胶底层与大弥散投影 (完全独立静态，绝不旋转，WindowServer 零重绘)
-            Circle()
-                .fill(Color(white: 0.10))
-                .frame(width: 260, height: 260)
-                .shadow(color: .black.opacity(0.38), radius: 24, y: 12)
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                player.isShowingLyrics = true
+            }
+        } label: {
+            ZStack {
+                // 静态黑胶底层与大弥散投影 (完全独立静态，绝不旋转，WindowServer 零重绘)
+                Circle()
+                    .fill(Color(white: 0.10))
+                    .frame(width: 260, height: 260)
+                    .shadow(color: .black.opacity(isHovering ? 0.48 : 0.38), radius: isHovering ? 28 : 24, y: isHovering ? 14 : 12)
 
-            // 旋转黑胶盘面 (通过 CoreAnimation 硬件驱动，零 CPU 开销)
-            VinylDiscRepresentable(image: coverImage, isPlaying: isPlaying, size: 260)
-                .frame(width: 260, height: 260)
+                // 旋转黑胶盘面 (通过 CoreAnimation 硬件驱动，零 CPU 开销)
+                VinylDiscRepresentable(image: coverImage, isPlaying: player.isPlaying, size: 260)
+                    .frame(width: 260, height: 260)
+                    .allowsHitTesting(false)
+
+                // 鼠标悬停时的半透明优雅提示遮罩
+                if isHovering {
+                    Circle()
+                        .fill(Color.black.opacity(0.32))
+                        .frame(width: 260, height: 260)
+                        .overlay {
+                            VStack(spacing: 8) {
+                                Image(systemName: "arrow.down.left.and.arrow.up.right")
+                                    .font(.system(size: 26, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .shadow(color: .black.opacity(0.5), radius: 4)
+
+                                Text("查看歌词".localized)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.white)
+                                    .shadow(color: .black.opacity(0.5), radius: 3)
+                            }
+                        }
+                        .transition(.opacity)
+                }
+            }
+            .contentShape(Circle())
+            .scaleEffect(isHovering ? 1.025 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovering)
         }
+        .buttonStyle(.plain)
+        .onHover { hov in
+            guard isHovering != hov else { return }
+            isHovering = hov
+            if hov {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .help("点击封面查看歌词".localized)
         .onAppear {
             loadCover()
         }
@@ -344,8 +447,16 @@ private struct FMVinylRecordView: View {
             loadCover()
         }
         .onDisappear {
+            resetCursor()
             loadTask?.cancel()
             loadTask = nil
+        }
+    }
+
+    private func resetCursor() {
+        if isHovering {
+            NSCursor.pop()
+            isHovering = false
         }
     }
 

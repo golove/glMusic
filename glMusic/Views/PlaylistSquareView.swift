@@ -82,7 +82,7 @@ struct PlaylistSquareView: View {
             .padding(.horizontal, 28)
             .padding(.top, 14)
             .padding(.bottom, 6)
-            .background(.ultraThinMaterial)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
         .task(id: selectedCategory) {
             await loadPlaylists(refresh: true)
@@ -94,25 +94,10 @@ struct PlaylistSquareView: View {
     private var headerSection: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text("歌单广场".localized)
-                        .font(.system(size: 32, weight: .bold))
+                Text("歌单广场".localized)
+                    .font(.system(size: 32, weight: .bold))
 
-                    // 官方专属标签
-                    HStack(spacing: 3) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 11))
-                        Text("官方甄选".localized)
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundStyle(themeManager.accentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(themeManager.accentColor.opacity(0.12))
-                    .clipShape(Capsule())
-                }
-
-                Text("网易云音乐官方精选优质歌单，沉浸纯粹音乐世界".localized)
+                Text("精选优质歌单，沉浸纯粹音乐世界".localized)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -252,7 +237,7 @@ struct PlaylistSquareView: View {
         VStack(spacing: 12) {
             ProgressView()
                 .controlSize(.large)
-            Text("正在加载官方歌单...".localized)
+            Text("正在加载歌单...".localized)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -287,7 +272,7 @@ struct PlaylistSquareView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.tertiary)
 
-            Text("未找到相关官方歌单".localized)
+            Text("未找到相关歌单".localized)
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
@@ -387,8 +372,7 @@ struct OfficialPlaylistCard: View, Equatable {
         lhs.playlist.id == rhs.playlist.id &&
         lhs.playlist.name == rhs.playlist.name &&
         lhs.playlist.displayCover == rhs.playlist.displayCover &&
-        lhs.playlist.playCount == rhs.playlist.playCount &&
-        lhs.playlist.creator?.nickname == rhs.playlist.creator?.nickname
+        lhs.playlist.playCount == rhs.playlist.playCount
     }
 
     var body: some View {
@@ -407,29 +391,6 @@ struct OfficialPlaylistCard: View, Equatable {
                     )
                 }
                 .buttonStyle(.plain)
-
-                // 官方角标 (左上角)
-                VStack {
-                    HStack {
-                        HStack(spacing: 3) {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.system(size: 9))
-                            Text("官方".localized)
-                                .font(.system(size: 10, weight: .bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(themeManager.accentColor.opacity(0.92))
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .padding(8)
-                .allowsHitTesting(false)
 
                 // 播放量角标 (左下角)
                 if let count = playlist.playCount {
@@ -488,15 +449,16 @@ struct OfficialPlaylistCard: View, Equatable {
                 .opacity(isHovering ? 1 : 0)
                 .allowsHitTesting(isHovering)
             }
+            .aspectRatio(1, contentMode: .fit)
             .scaleEffect(isHovering ? 1.02 : 1.0)
-            .shadow(color: .black.opacity(isHovering ? 0.18 : 0.05), radius: isHovering ? 6 : 2, y: isHovering ? 3 : 1)
+            .shadow(color: isHovering ? .black.opacity(0.18) : .clear, radius: isHovering ? 6 : 0, y: isHovering ? 3 : 0)
             .animation(.easeInOut(duration: 0.15), value: isHovering)
             .onHover { hovering in
                 hoverDebounceTask?.cancel()
                 if hovering {
-                    // 滑动防抖抑制：当用户连续滚动掠过卡片不足 45ms 时，不触发阴影与放大动画
+                    // 滑动防抖抑制：当用户连续滚动掠过卡片不足 120ms 时，不触发阴影与放大动画
                     hoverDebounceTask = Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 45_000_000) // 45ms
+                        try? await Task.sleep(nanoseconds: 120_000_000) // 120ms
                         guard !Task.isCancelled else { return }
                         withAnimation(.easeInOut(duration: 0.15)) {
                             isHovering = true
@@ -509,29 +471,16 @@ struct OfficialPlaylistCard: View, Equatable {
                 }
             }
 
-            // MARK: - Title & Creator
+            // MARK: - Title (固定 38pt 高度与顶部对齐，彻底消除单行/双行标题导致的网格高度不一与错位)
             Button {
                 onSelect?()
             } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(playlist.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(themeManager.accentColor)
-
-                        Text(playlist.creator?.nickname ?? "网易云音乐".localized)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(playlist.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38, alignment: .topLeading)
             }
             .buttonStyle(.plain)
         }
